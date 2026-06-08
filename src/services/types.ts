@@ -1,0 +1,36 @@
+//normalizes and shapes the data from the status page api (prometheus, grafana, NUT, Proxmox, Zabbix) into a format that is easier to work with in the app.
+
+
+export type Status = 'operational' | 'degraded' | 'outage' | 'unknown' //up, sub-optimal, maintenance, unknown
+
+export interface ServiceStatus {
+  id: string
+  name: string
+  category: string
+  status: Status
+  metadata?: Record<string, string>
+}
+
+export interface IncidentUpdate {
+  timestamp: string
+  message: string
+}
+
+export type IncidentStatus = 'investigating' | 'identified' | 'monitoring' | 'resolved' 
+
+export interface Incident {
+  id: string
+  title: string
+  status: IncidentStatus
+  createdAt: string
+  updatedAt: string
+  affectedServices: string[]
+  updates: IncidentUpdate[]
+}
+
+export interface StatusPage {
+  overall: Status
+  services: ServiceStatus[]
+  incidents: Incident[]
+  lastUpdated: string
+}
