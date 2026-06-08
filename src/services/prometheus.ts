@@ -7,14 +7,109 @@ async function queryPrometheus(query: string): Promise<any> {
   const response = await fetch(url)
 
   if (!response.ok) {
-    throw new Error(`Prometheus query failed: ${response.status}`)
+    throw new Error(`Prometheus query failed: ${response.status}`) //network error or non-2xx response
   }
 
   const json = await response.json()
 
   if (json.status !== 'success') {
-    throw new Error(`Prometheus returned error: ${json.error ?? 'unknown'}`)
+    throw new Error(`Prometheus returned error: ${json.error ?? 'unknown'}`) //prometheus returned an error response
   }
 
   return json.data.result
+}
+//promQL queries to fetch node exporter metrics for all nodes, then shape that data into the ServiceStatus format used by the app. 
+// This is just an example, you can customize the queries and the resulting ServiceStatus objects as needed for your specific use case. 
+// For example, you might want to include additional metadata about each node, or calculate the status based on specific thresholds for CPU and memory usage.
+// ok this AI is really good at writing code, but I need to stop it before it writes the entire function for me. 
+export async function fetchNodeStatus(): Promise<ServiceStatus[]> {
+  const [upResults, cpuResults, memResults] = await Promise.all([
+    queryPrometheus('up{job="node_exporter"}'),
+    queryPrometheus('100 - (avg by (instance, friendly_name) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)'),
+    queryPrometheus('100 * (1 - ((avg_over_time(node_memory_MemFree_bytes[5m]) + avg_over_time(node_memory_Cached_bytes[5m]) + avg_over_time(node_memory_Buffers_bytes[5m])) / avg_over_time(node_memory_MemTotal_bytes[5m])))'),
+  ])
+
+  const cpuMap = new Map<string, string>()
+  const memMap = new Map<string, string>()
+
+  for (const result of cpuResults) {
+    const instance = result.metric.instance
+    const value = parseFloat(result.value[1]).toFixed(1)
+    cpuMap.set(instance, value)
+  }
+
+  for (const result of memResults) {
+    const instance = result.metric.instance
+    const value = parseFloat(result.value[1]).toFixed(1)
+    memMap.set(instance, value)
+  }
+
+  // Now we have maps of CPU and memory usage by instance, we can combine that with the 'up' results to create our ServiceStatus objects.
+  return upResults.map((result: any): ServiceStatus => {
+    const instance = result.metric.instance
+    const friendlyName = result.metric.friendly_name ?? instance
+    const isUp = result.value[1] === '1'
+
+    return {
+      id: instance,
+      name: friendlyName,
+      category: 'Proxmox Nodes',
+      status: isUp ? 'operational' : 'outage',
+      metadata: {
+        cpu: `${cpuMap.get(instance) ?? '—'}%`,
+        memory: `${memMap.get(instance) ?? '—'}%`,
+      },
+    }
+  })
+}
+
+// Similar to the above, but for UPS status using NUT exporter metrics. prometheus already pulls data from NUT, so we just need to query the relevant metrics and shape them into ServiceStatus objects.
+export async function fetchUpsStatus(): Promise<ServiceStatus[]> {
+  const [statusResults, runtimeResults, loadResults] = await Promise.all([
+    queryPrometheus('nut_ups_status'),
+    queryPrometheus('nut_battery_runtime_seconds'),
+    queryPrometheus('nut_load'),
+  ])
+
+  const activeFlags: string[] = []
+  for (const result of statusResults) {
+    if (result.value[1] === '1') {
+      activeFlags.push(result.metric.flag)
+    }
+  }
+
+  const isOnBattery = activeFlags.includes('OB')
+  const isLowBattery = activeFlags.includes('LB')
+  const isOnline = activeFlags.includes('OL')
+
+  let status: Status = 'unknown'
+  if (isLowBattery) status = 'outage'
+  else if (isOnBattery) status = 'degraded'
+  else if (isOnline) status = 'operational'
+
+  const runtimeSeconds = runtimeResults[0]
+    ? parseFloat(runtimeResults[0].value[1])
+    : null
+  const runtimeMinutes = runtimeSeconds !== null
+    ? `${Math.floor(runtimeSeconds / 60)}m`
+    : '—'
+
+  const loadRatio = loadResults[0]
+    ? parseFloat(loadResults[0].value[1])
+    : null
+  const loadPercent = loadRatio !== null
+    ? `${(loadRatio * 100).toFixed(0)}%`
+    : '—'
+
+  return [{
+    id: 'ups-cyberpower',
+    name: 'CyberPower UPS',
+    category: 'Power',
+    status,
+    metadata: {
+      flags: activeFlags.join(', '),
+      runtime: runtimeMinutes,
+      load: loadPercent,
+    },
+  }]
 }
