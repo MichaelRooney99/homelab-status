@@ -78,7 +78,7 @@ export async function fetchUpsStatus(): Promise<ServiceStatus[]> {
   const activeFlags: string[] = []
   for (const result of statusResults) {
     if (result.value[1] === '1') {
-      activeFlags.push(result.metric.flag)
+      activeFlags.push(result.metric.status)
     }
   }
 
