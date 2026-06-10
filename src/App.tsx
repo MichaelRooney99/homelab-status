@@ -1,7 +1,7 @@
 import { useServiceStatus } from './hooks/useServiceStatus'
 import OverallHealth from './components/OverallHealth'
 import ServiceRow from './components/ServiceRow'
-import type { ServiceStatus } from './services/types'
+import type { ServiceStatus, Status, UptimeDay } from './services/types'
 
 const CATEGORY_ORDER = [
   'Proxmox Nodes',
@@ -49,6 +49,22 @@ export default function App() {
     )
   }
 
+function generatePlaceholderDays(currentStatus: Status): UptimeDay[] {
+  const days: UptimeDay[] = []
+  const today = new Date()
+
+  for (let i = 89; i >= 0; i--) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - i)
+    days.push({
+      date: date.toISOString().split('T')[0],
+      status: i === 0 ? currentStatus : 'no-data',
+    })
+  }
+
+  return days
+}
+
   const grouped = groupByCategory(statusPage.services)
   const outageCount = statusPage.services.filter(s => s.status === 'outage').length
 
@@ -79,7 +95,12 @@ export default function App() {
             </h2>
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-6">
               {services.map(service => (
-                <ServiceRow key={service.id} service={service} />
+                <ServiceRow
+                  key={service.id}
+                  service={service}
+                  days={generatePlaceholderDays(service.status)}
+                  uptimePercent={service.status === 'operational' ? 100 : undefined}
+                />
               ))}
             </div>
           </section>
