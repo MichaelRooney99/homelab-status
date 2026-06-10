@@ -78,7 +78,7 @@ export async function fetchUpsStatus(): Promise<ServiceStatus[]> {
   const activeFlags: string[] = []
   for (const result of statusResults) {
     if (result.value[1] === '1') {
-      activeFlags.push(result.metric.status)
+      activeFlags.push(result.metric.status)// label key is 'status' not 'flag' — varies by nut_exporter version
     }
   }
 
