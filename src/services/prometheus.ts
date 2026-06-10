@@ -1,8 +1,12 @@
 import type { ServiceStatus, Status } from './types'
 
+interface PrometheusResult {
+  metric: Record<string, string>
+  value: [number, string]
+}
 const PROMETHEUS_URL = import.meta.env.VITE_PROMETHEUS_URL ?? 'http://10.10.10.105:9090' //local prometheus instance running in docker on the homelab server
 
-async function queryPrometheus(query: string): Promise<any> {
+async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
   const url = `${PROMETHEUS_URL}/api/v1/query?query=${encodeURIComponent(query)}`
   const response = await fetch(url)
 
@@ -45,7 +49,7 @@ export async function fetchNodeStatus(): Promise<ServiceStatus[]> {
   }
 
   // Now we have maps of CPU and memory usage by instance, we can combine that with the 'up' results to create our ServiceStatus objects.
-  return upResults.map((result: any): ServiceStatus => {
+  return upResults.map((result: PrometheusResult): ServiceStatus => {
     const instance = result.metric.instance
     const friendlyName = result.metric.friendly_name ?? instance
     const isUp = result.value[1] === '1'
