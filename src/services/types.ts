@@ -34,3 +34,12 @@ export interface StatusPage {
   incidents: Incident[]
   lastUpdated: string
 }
+
+//need something to hold "history" of the status for each day, so we can show a graph of the uptime over time.
+//  This will be used to show the uptime percentage for the last 90 days, and also to show a graph of the uptime over time.
+export type DayStatus = 'operational' | 'degraded' | 'outage' | 'unknown' | 'no-data'
+
+export interface UptimeDay {
+  date: string
+  status: DayStatus
+}

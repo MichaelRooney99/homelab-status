@@ -1,8 +1,11 @@
-import type { ServiceStatus } from '../services/types'
+import type { ServiceStatus, UptimeDay } from '../services/types'
 import StatusBadge from './StatusBadge'
+import UptimeBars from './UptimeBars'
 
 interface ServiceRowProps {
   service: ServiceStatus
+  days?: UptimeDay[]
+  uptimePercent?: number
 }
 
 function MetadataDisplay({ metadata }: { metadata: Record<string, string> }) {
@@ -21,23 +24,28 @@ function MetadataDisplay({ metadata }: { metadata: Record<string, string> }) {
   )
 }
 
-export default function ServiceRow({ service }: ServiceRowProps) {
+export default function ServiceRow({ service, days, uptimePercent }: ServiceRowProps) {
   return (
-    <div className="flex items-start justify-between gap-4 py-4 border-b border-zinc-800 last:border-0">
-      <div className="flex flex-col">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-zinc-100">{service.name}</span>
-          <span className="text-xs text-zinc-600 uppercase tracking-wide">
-            {service.category}
-          </span>
+    <div className="py-4 border-b border-zinc-800 last:border-0">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-zinc-100">{service.name}</span>
+            <span className="text-xs text-zinc-600 uppercase tracking-wide">
+              {service.category}
+            </span>
+          </div>
+          {service.metadata && Object.keys(service.metadata).length > 0 && (
+            <MetadataDisplay metadata={service.metadata} />
+          )}
         </div>
-        {service.metadata && Object.keys(service.metadata).length > 0 && (
-          <MetadataDisplay metadata={service.metadata} />
-        )}
+        <div className="shrink-0">
+          <StatusBadge status={service.status} />
+        </div>
       </div>
-      <div className="shrink-0">
-        <StatusBadge status={service.status} />
-      </div>
+      {days && days.length > 0 && (
+        <UptimeBars days={days} uptimePercent={uptimePercent} /> //only show if we have data for the uptime bars, otherwise it just looks like a gap between services which is confusing
+      )}
     </div>
   )
 }
