@@ -1,10 +1,12 @@
 import type { StatusPage, ServiceStatus, Status } from './types'
 import { fetchNodeStatus, fetchUpsStatus } from './prometheus'
-
+import { fetchProxmoxNodeStatus } from './proxmox'
+  
 export async function fetchAllServices(): Promise<StatusPage> {
   const results = await Promise.allSettled([
     fetchNodeStatus(),
     fetchUpsStatus(),
+    fetchProxmoxNodeStatus(),
   ])
 
   const services: ServiceStatus[] = []
