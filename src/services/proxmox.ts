@@ -24,22 +24,35 @@ async function queryProxmox<T>(path: string): Promise<T> {
   return json.data as T
 }
 
+function capitalize(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1)
+}
+
 export async function fetchProxmoxNodeStatus(): Promise<ServiceStatus[]> {
   const nodes = await queryProxmox<ProxmoxNode[]>('nodes')
 
   return nodes.map((node): ServiceStatus => {
-    const cpuPercent = (node.cpu * 100).toFixed(1)
-    const memPercent = ((node.mem / node.maxmem) * 100).toFixed(1)
-    const uptimeHours = Math.floor(node.uptime / 3600)
-    const uptimeDays = Math.floor(node.uptime / 86400)
+    const cpu = node.cpu ?? 0
+    const mem = node.mem ?? 0
+    const maxmem = node.maxmem ?? 0
+    const uptime = node.uptime ?? 0
 
-    const uptimeDisplay = uptimeDays > 0
-      ? `${uptimeDays}d ${Math.floor((node.uptime % 86400) / 3600)}h`
-      : `${uptimeHours}h`
+    const cpuPercent = (cpu * 100).toFixed(1)
+    const memPercent = maxmem > 0
+      ? ((mem / maxmem) * 100).toFixed(1)
+      : '0.0'
+    const uptimeDays = Math.floor(uptime / 86400)
+    const uptimeHours = Math.floor(uptime / 3600)
+
+    const uptimeDisplay = uptime === 0
+      ? 'offline'
+      : uptimeDays > 0
+        ? `${uptimeDays}d ${Math.floor((uptime % 86400) / 3600)}h`
+        : `${uptimeHours}h`
 
     return {
       id: `proxmox-${node.node}`,
-      name: node.node,
+      name: capitalize(node.node),
       category: 'Proxmox API',
       status: node.status === 'online' ? 'operational' : 'outage',
       metadata: {

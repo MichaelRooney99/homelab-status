@@ -5,6 +5,7 @@ import type { ServiceStatus, Status, UptimeDay } from './services/types'
 
 const CATEGORY_ORDER = [
   'Proxmox Nodes',
+  'Proxmox API',
   'Power',
   'Network',
   'Services',
