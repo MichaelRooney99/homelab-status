@@ -28,6 +28,13 @@ if (!ZABBIX_HOST || !ZABBIX_USER || !ZABBIX_PASSWORD) {
 let zabbixToken: string | null = null
 let zabbixTokenExpiry = 0
 
+interface ZabbixLoginResponse {
+  jsonrpc: string
+  result?: string
+  error?: { data: string; message: string }
+  id: number
+}
+
 async function getZabbixToken(): Promise<string> {
   const now = Date.now()
 
@@ -46,10 +53,14 @@ async function getZabbixToken(): Promise<string> {
     }),
   })
 
-  const json = await response.json()
+  const json = await response.json() as ZabbixLoginResponse
 
   if (json.error) {
     throw new Error(`Zabbix login failed: ${json.error.data}`)
+  }
+
+  if (!json.result) {
+    throw new Error('Zabbix login returned no token')
   }
 
   zabbixToken = json.result
