@@ -9,6 +9,7 @@ const CATEGORY_ORDER = [
   'Power',
   'Network',
   'Services',
+  'Zabbix',
 ]
 
 function groupByCategory(services: ServiceStatus[]): Map<string, ServiceStatus[]> {
