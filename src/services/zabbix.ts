@@ -25,7 +25,7 @@ interface ZabbixResponse {
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001'
 
-// Zabbix server's own host entry — not a node we want on the status page
+// Zabbix server's own host entry — not a node for the status page
 const ZABBIX_SERVER_NAME = 'Zabbix server'
 
 async function queryZabbix(
@@ -53,7 +53,6 @@ async function queryZabbix(
 
 // ── Availability mapping ──────────────────────────────────────────────────
 
-// Zabbix 7.x moved agent availability to the interfaces object.
 // Find the agent interface (type "1") and read its available field.
 // "0" = unknown, "1" = available, "2" = unavailable
 
