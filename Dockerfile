@@ -10,7 +10,8 @@ COPY . .
 # Empty VITE_PROXY_URL bakes in same-origin relative fetches (e.g. /proxmox, /zabbix)
 # rather than the http://localhost:3001 dev fallback — nginx below reverse-proxies
 # those paths to the proxy container, so the browser only ever talks to one origin.
-RUN echo "VITE_PROXY_URL=" > .env.production
+RUN echo "VITE_PROXY_URL=" > .env.production && \
+    echo "VITE_PROMETHEUS_URL=/prometheus" >> .env.production
 
 RUN npm run build
 

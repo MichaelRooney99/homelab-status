@@ -13,6 +13,7 @@ const PROXMOX_TOKEN = process.env.PROXMOX_TOKEN
 const ZABBIX_HOST = process.env.ZABBIX_HOST
 const ZABBIX_USER = process.env.ZABBIX_USER
 const ZABBIX_PASSWORD = process.env.ZABBIX_PASSWORD
+const PROMETHEUS_HOST = process.env.PROMETHEUS_HOST ?? 'http://10.10.10.105:9090'
 
 if (!PROXMOX_HOST || !PROXMOX_TOKEN) {
   console.error('PROXMOX_HOST and PROXMOX_TOKEN are required')
@@ -88,6 +89,16 @@ app.use((req, res, next) => {
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
 })
+
+// ── Prometheus proxy ──────────────────────────────────────────────
+app.use(
+  '/prometheus',
+  createProxyMiddleware({
+    target: PROMETHEUS_HOST,
+    changeOrigin: true,
+    pathRewrite: { '^/prometheus': '' },
+  })
+)
 
 // ── Proxmox proxy ──────────────────────────────────────────────────
 app.use(
