@@ -1,4 +1,5 @@
 import { useServiceStatus } from './hooks/useServiceStatus'
+import { useUptimeHistory } from './hooks/useUptimeHistory'
 import OverallHealth from './components/OverallHealth'
 import ServiceRow from './components/ServiceRow'
 import type { ServiceStatus, Status, UptimeDay } from './services/types'
@@ -48,8 +49,22 @@ function generatePlaceholderDays(currentStatus: Status): UptimeDay[] {
   return days
 }
 
+// Percent of days WITH data that were operational — 'no-data' days are
+// excluded from the denominator rather than counted against the service,
+// since they mean "Prometheus retention doesn't reach that far," not
+// "this service was down." Returns undefined if every day is no-data
+// (e.g. brand new service, nothing to compute a percent from yet).
+function calculateUptimePercent(days: UptimeDay[]): number | undefined {
+  const withData = days.filter(d => d.status !== 'no-data')
+  if (withData.length === 0) return undefined
+
+  const operational = withData.filter(d => d.status === 'operational').length
+  return (operational / withData.length) * 100
+}
+
 export default function App() {
   const { statusPage, isLoading, isError } = useServiceStatus()
+  const { history } = useUptimeHistory()
 
   if (isLoading) {
     return (
@@ -96,14 +111,22 @@ export default function App() {
               {category}
             </h2>
             <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-6">
-              {services.map(service => (
-                <ServiceRow
-                  key={service.id}
-                  service={service}
-                  days={generatePlaceholderDays(service.status)}
-                  uptimePercent={service.status === 'operational' ? 100 : undefined}
-                />
-              ))}
+              {services.map(service => {
+                const realHistory = history[service.id]
+                const days = realHistory ?? generatePlaceholderDays(service.status)
+                const uptimePercent = realHistory
+                  ? calculateUptimePercent(realHistory)
+                  : service.status === 'operational' ? 100 : undefined
+
+                return (
+                  <ServiceRow
+                    key={service.id}
+                    service={service}
+                    days={days}
+                    uptimePercent={uptimePercent}
+                  />
+                )
+              })}
             </div>
           </section>
         ))}
