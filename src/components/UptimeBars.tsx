@@ -27,6 +27,18 @@ function formatDate(iso: string): string {
     day: 'numeric',
   })
 }
+
+// 100% is the only case that reads as fully healthy. Below that, the
+// severity should match what the bars themselves are showing — a real
+// outage day should read red here too, not the same yellow as a minor
+// blip. >=99% covers a single bad day out of ~90 without over-alarming;
+// anything worse than that is a red uptime percent, matching the red
+// bars a viewer would see if they scanned the row itself.
+function uptimeColor(percent: number): string {
+  if (percent === 100) return 'text-green-400'
+  if (percent >= 99) return 'text-yellow-400'
+  return 'text-red-400'
+}
 //where im holding history of status for each day, so i can show a graph of the uptime over time.
 //This will be used to show the uptime percentage for the last 90 days, and also to show a 
 //graph of the uptime over time.
@@ -40,36 +52,56 @@ export default function UptimeBars({ days, uptimePercent }: UptimeBarsProps) {
       <div
         className="flex items-end gap-px"
         role="img"
-        aria-label="90-day uptime history"
+        aria-label={
+          uptimePercent !== undefined
+            ? `90-day uptime history: ${uptimePercent.toFixed(2)}% uptime`
+            : '90-day uptime history'
+        }
       >
-        {paddedDays.map((day, index) => (
-          <div
-            key={index}
-            className="group relative flex-1"
-          >
+        {paddedDays.map((day, index) => {
+          // Bars near either edge get their tooltip anchored to that edge
+          // instead of centered — a centered tooltip on the first or last
+          // bar overflows off-screen on narrow viewports, since the bar
+          // itself is only a few pixels wide with 90 packed into one row.
+          const isNearStart = index < 5
+          const isNearEnd = index > paddedDays.length - 6
+          const tooltipPosition = isNearStart
+            ? 'left-0 translate-x-0'
+            : isNearEnd
+            ? 'right-0 left-auto translate-x-0'
+            : 'left-1/2 -translate-x-1/2'
+
+          return (
             <div
-              className={`h-8 rounded-sm ${dayColor[day.status]} opacity-90 hover:opacity-100 transition-opacity`}
-            />
-            {day.date && (
-              <div className="
-                absolute bottom-full left-1/2 -translate-x-1/2 mb-2
-                bg-zinc-800 border border-zinc-700 rounded px-2 py-1
-                text-xs text-zinc-200 whitespace-nowrap
-                opacity-0 group-hover:opacity-100
-                transition-opacity pointer-events-none z-10
-              ">
-                <span className="font-medium">{formatDate(day.date)}</span>
-                <span className="text-zinc-400 ml-1">— {dayLabel[day.status]}</span>
-              </div>
-            )}
-          </div>
-        ))}
+              key={index}
+              className="group relative flex-1"
+              tabIndex={day.date ? 0 : -1}
+            >
+              <div
+                className={`h-8 rounded-sm ${dayColor[day.status]} opacity-90 hover:opacity-100 group-focus:opacity-100 group-focus:ring-2 group-focus:ring-zinc-400 transition-opacity outline-none`}
+                title={day.date ? `${formatDate(day.date)} — ${dayLabel[day.status]}` : undefined}
+              />
+              {day.date && (
+                <div className={`
+                  absolute bottom-full mb-2 ${tooltipPosition}
+                  bg-zinc-800 border border-zinc-700 rounded px-2 py-1
+                  text-xs text-zinc-200 whitespace-nowrap
+                  opacity-0 group-hover:opacity-100 group-focus:opacity-100
+                  transition-opacity pointer-events-none z-10
+                `}>
+                  <span className="font-medium">{formatDate(day.date)}</span>
+                  <span className="text-zinc-400 ml-1">— {dayLabel[day.status]}</span>
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
       <div className="flex justify-between items-center mt-1.5">
         <span className="text-xs text-zinc-600">90 days ago</span>
         {uptimePercent !== undefined && (
           <span className="text-xs text-zinc-500">
-            <span className={uptimePercent === 100 ? 'text-green-400' : 'text-yellow-400'}>
+            <span className={uptimeColor(uptimePercent)}>
               {uptimePercent.toFixed(2)}%
             </span>
             {' '}uptime
