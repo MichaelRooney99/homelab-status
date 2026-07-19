@@ -69,7 +69,9 @@ export default function App() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <p className="text-zinc-500 text-sm">Loading status...</p>
+        <p className="text-zinc-500 text-sm" role="status" aria-live="polite">
+          Loading status...
+        </p>
       </div>
     )
   }
@@ -77,7 +79,9 @@ export default function App() {
   if (isError || !statusPage) {
     return (
       <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <p className="text-red-400 text-sm">Unable to reach monitoring infrastructure.</p>
+        <p className="text-red-400 text-sm" role="alert">
+          Unable to reach monitoring infrastructure.
+        </p>
       </div>
     )
   }
