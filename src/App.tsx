@@ -32,6 +32,22 @@ function groupByCategory(services: ServiceStatus[]): Map<string, ServiceStatus[]
   return map
 }
 
+function generatePlaceholderDays(currentStatus: Status): UptimeDay[] {
+  const days: UptimeDay[] = []
+  const today = new Date()
+
+  for (let i = 89; i >= 0; i--) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - i)
+    days.push({
+      date: date.toISOString().split('T')[0],
+      status: i === 0 ? currentStatus : 'no-data',
+    })
+  }
+
+  return days
+}
+
 export default function App() {
   const { statusPage, isLoading, isError } = useServiceStatus()
 
@@ -50,22 +66,6 @@ export default function App() {
       </div>
     )
   }
-
-function generatePlaceholderDays(currentStatus: Status): UptimeDay[] {
-  const days: UptimeDay[] = []
-  const today = new Date()
-
-  for (let i = 89; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(today.getDate() - i)
-    days.push({
-      date: date.toISOString().split('T')[0],
-      status: i === 0 ? currentStatus : 'no-data',
-    })
-  }
-
-  return days
-}
 
   const grouped = groupByCategory(statusPage.services)
   const outageCount = statusPage.services.filter(s => s.status === 'outage').length
