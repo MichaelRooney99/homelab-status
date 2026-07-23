@@ -9,6 +9,18 @@ import type { DayStatus, UptimeDay } from './types'
 const PROMETHEUS_URL = import.meta.env.VITE_PROMETHEUS_URL ?? 'http://10.10.10.105:9090'
 const HISTORY_DAYS = 90
 
+// Anchors to actual UTC midnight rather than "right now." Without this,
+// a query window built as `Date.now() - 90*86400` shifts by however many
+// hours have passed since the code last ran — the sample Prometheus
+// returns for "the bucket labeled July 16th" lands on a different real
+// instant depending on what time of day the page happens to load, which
+// means the same nominal day can show a different status run to run.
+// Anchoring every step to a fixed UTC midnight makes each day's sample
+// stable regardless of when the query fires.
+function utcMidnightSeconds(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1000
+}
+
 interface PrometheusInstantResult {
   metric: Record<string, string>
   value: [number, string]
@@ -75,13 +87,13 @@ function buildUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
     }
   }
 
-  const today = new Date()
   const days: UptimeDay[] = []
+  const todayUtcMidnight = utcMidnightSeconds(new Date())
 
   for (let i = HISTORY_DAYS - 1; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(today.getDate() - i)
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = new Date((todayUtcMidnight - i * 86400) * 1000)
+      .toISOString()
+      .split('T')[0]
     const value = valueByDate.get(dateStr)
 
     days.push({
@@ -113,13 +125,13 @@ function buildUpsUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
     }
   }
 
-  const today = new Date()
   const days: UptimeDay[] = []
+  const todayUtcMidnight = utcMidnightSeconds(new Date())
 
   for (let i = HISTORY_DAYS - 1; i >= 0; i--) {
-    const date = new Date(today)
-    date.setDate(today.getDate() - i)
-    const dateStr = date.toISOString().split('T')[0]
+    const dateStr = new Date((todayUtcMidnight - i * 86400) * 1000)
+      .toISOString()
+      .split('T')[0]
     const flags = flagsByDate.get(dateStr)
 
     let status: DayStatus = 'no-data'
@@ -134,7 +146,10 @@ function buildUpsUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
 }
 
 async function fetchNodeInstanceHistory(instance: string): Promise<UptimeDay[]> {
-  const end = Math.floor(Date.now() / 1000)
+  // end is tomorrow's UTC midnight (exclusive upper bound) so today's own
+  // step lands exactly on today's UTC midnight, not partway through today
+  // at whatever time this happens to run.
+  const end = utcMidnightSeconds(new Date()) + 86400
   const start = end - HISTORY_DAYS * 86400
 
   const results = await queryPrometheusRange(
@@ -148,7 +163,7 @@ async function fetchNodeInstanceHistory(instance: string): Promise<UptimeDay[]> 
 }
 
 async function fetchUpsHistory(): Promise<UptimeDay[]> {
-  const end = Math.floor(Date.now() / 1000)
+  const end = utcMidnightSeconds(new Date()) + 86400
   const start = end - HISTORY_DAYS * 86400
 
   const results = await queryPrometheusRange(
