@@ -1,0 +1,28 @@
+[
+  {
+    "id": "2026-07-16-rack-rebuild",
+    "title": "Planned maintenance — full fleet offline for rack rebuild",
+    "status": "resolved",
+    "createdAt": "2026-07-16T09:00:00.000Z",
+    "updatedAt": "2026-07-16T18:00:00.000Z",
+    "affectedServices": [
+      "10.10.10.2:9100",
+      "10.10.10.55:9100",
+      "10.10.10.57:9100",
+      "10.10.10.56:9100",
+      "10.10.10.102:9100",
+      "10.10.20.54:9100",
+      "ups-cyberpower"
+    ],
+    "updates": [
+      {
+        "timestamp": "2026-07-16T09:00:00.000Z",
+        "message": "All six Proxmox nodes and the UPS are being powered down for a planned physical rack rebuild — moving the fleet into a new 3D-printed 10-inch 10U rack. This is planned maintenance, not an unplanned outage."
+      },
+      {
+        "timestamp": "2026-07-16T18:00:00.000Z",
+        "message": "Rebuild complete. All nodes back online and Prometheus scraping resumed. Uptime history for this date correctly shows a gap rather than fabricated data — see the 90-day bars for any service above."
+      }
+    ]
+  }
+]
