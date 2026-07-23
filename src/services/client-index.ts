@@ -1,19 +1,28 @@
-import type { StatusPage, ServiceStatus, Status } from './types'
+import type { StatusPage, ServiceStatus, Status, Incident } from './types'
 import { fetchNodeStatus, fetchUpsStatus } from './prometheus'
 import { fetchProxmoxNodeStatus } from './proxmox'
 import { fetchZabbixStatus } from './zabbix'
-  
+import { fetchIncidents } from './incidents'
+
 export async function fetchAllServices(): Promise<StatusPage> {
-  const results = await Promise.allSettled([
-    fetchNodeStatus(),
-    fetchUpsStatus(),
-    fetchProxmoxNodeStatus(),
-    fetchZabbixStatus(),
+  const [serviceResults, incidents] = await Promise.all([
+    Promise.allSettled([
+      fetchNodeStatus(),
+      fetchUpsStatus(),
+      fetchProxmoxNodeStatus(),
+      fetchZabbixStatus(),
+    ]),
+    // Incidents get their own failure isolation rather than joining the
+    // services array — a failed incidents fetch shouldn't erase services,
+    // and a failed service fetch shouldn't erase the incidents section.
+    // Same Promise.allSettled reasoning as everything else here, applied
+    // per data shape instead of assuming one array fits both.
+    fetchIncidents().catch(() => [] as Incident[]),
   ])
 
   const services: ServiceStatus[] = []
 
-  for (const result of results) {
+  for (const result of serviceResults) {
     if (result.status === 'fulfilled') {
       services.push(...result.value)
     }
@@ -23,7 +32,7 @@ export async function fetchAllServices(): Promise<StatusPage> {
   return {
     overall: deriveOverallStatus(services),
     services,
-    incidents: [],
+    incidents,
     lastUpdated: new Date().toISOString(),
   }
 }

@@ -1,11 +1,20 @@
 import express from 'express'
 import { createProxyMiddleware } from 'http-proxy-middleware'
 import dotenv from 'dotenv'
+import { readFile } from 'fs/promises'
+import path from 'path'
 
 dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT ?? 3001
+
+// Overridable via env so the actual on-disk location is a deployment
+// concern (docker-compose bind-mounts it), not something this file has
+// to guess about the container's working directory. Falls back to a
+// path relative to this file for local dev, where there's no mount.
+const INCIDENTS_FILE = process.env.INCIDENTS_FILE_PATH
+  ?? path.join(__dirname, '..', 'incidents.json')
 
 // ── Environment variables ──────────────────────────────────────────
 const PROXMOX_HOST = process.env.PROXMOX_HOST
@@ -88,6 +97,22 @@ app.use((req, res, next) => {
 // ── Health check ───────────────────────────────────────────────────
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok' })
+})
+
+// ── Incidents ──────────────────────────────────────────────────────
+// Reads the file fresh on every request rather than caching it in memory.
+// The file is tiny and requests are infrequent, so there's no real cost
+// to this — and it means an edit to incidents.json takes effect on the
+// very next request, whether that edit came from a direct SSH edit on
+// Dega or from a normal git pull via capstone_deploy.yml. No restart,
+// no rebuild, either way.
+app.get('/incidents', async (_req, res) => {
+  try {
+    const raw = await readFile(INCIDENTS_FILE, 'utf-8')
+    res.json(JSON.parse(raw))
+  } catch (error) {
+    res.status(500).json({ error: String(error) })
+  }
 })
 
 // ── Prometheus proxy ──────────────────────────────────────────────
