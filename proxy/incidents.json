@@ -1,5 +1,23 @@
 [
   {
+    "id": "2026-07-23-history-day-boundary",
+    "title": "90-day uptime history occasionally showing an incorrect status for a given day",
+    "status": "monitoring",
+    "createdAt": "2026-07-23T18:00:00.000Z",
+    "updatedAt": "2026-07-23T18:30:00.000Z",
+    "affectedServices": [],
+    "updates": [
+      {
+        "timestamp": "2026-07-23T18:00:00.000Z",
+        "message": "Identified that the 90-day history query window wasn't anchored to calendar-day boundaries — the query start/end were computed as \"now minus 90 days\" rather than fixed UTC midnights, so the specific instant sampled for a given day's bar drifted depending on what time the page happened to load. Root cause confirmed, fix in progress."
+      },
+      {
+        "timestamp": "2026-07-23T18:30:00.000Z",
+        "message": "Fix deployed to the history adapter — every day's sample is now anchored to UTC midnight, so it's stable regardless of load time. Monitoring over the next few days to confirm historical bars settle to the correct status before marking this resolved."
+      }
+    ]
+  },
+  {
     "id": "2026-07-16-rack-rebuild",
     "title": "Planned maintenance — full fleet offline for rack rebuild",
     "status": "resolved",
