@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchAllServices } from '../services/index'
+import { fetchAllServices } from '../services/client-index'
 import type { StatusPage } from '../services/types'
 
 export function useServiceStatus() {

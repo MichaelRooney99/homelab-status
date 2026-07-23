@@ -2,6 +2,7 @@ import { useServiceStatus } from './hooks/useServiceStatus'
 import { useUptimeHistory } from './hooks/useUptimeHistory'
 import OverallHealth from './components/OverallHealth'
 import ServiceRow from './components/ServiceRow'
+import IncidentList from './components/IncidentList'
 import type { ServiceStatus, Status, UptimeDay } from './services/types'
 
 const CATEGORY_ORDER = [
@@ -108,6 +109,8 @@ export default function App() {
           serviceCount={statusPage.services.length}
           outageCount={outageCount}
         />
+
+        <IncidentList incidents={statusPage.incidents} />
 
         {Array.from(grouped.entries()).map(([category, services]) => (
           <section key={category}>

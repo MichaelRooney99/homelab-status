@@ -13,6 +13,10 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./proxy/.env
+    environment:
+      - INCIDENTS_FILE_PATH=/data/incidents.json
     ports:
       - "3001:3001"
+    volumes:
+      - ./proxy/incidents.json:/data/incidents.json:ro
     restart: unless-stopped
