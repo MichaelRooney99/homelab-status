@@ -1,5 +1,5 @@
 import type { Incident } from '../services/types'
-import IncidentBadge from './IncidentBadge'
+import IncidentBadge from './incidentbadge'
 
 interface IncidentListProps {
   incidents: Incident[]
