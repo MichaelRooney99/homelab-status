@@ -24,3 +24,8 @@ dist-ssr
 *.sw?
 .env
 proxy/.env
+
+# Locally-generated snapshot history — the local dev fallback path for
+# db.ts. In production this lives in a Docker named volume instead, not
+# the repo. Not source, shouldn't be tracked, unlike incidents.json.
+proxy/snapshots.db
