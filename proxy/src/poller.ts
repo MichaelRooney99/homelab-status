@@ -25,6 +25,23 @@ interface ZabbixHost {
   interfaces: ZabbixInterface[]
 }
 
+// Response shapes for the two proxy routes this poller calls into —
+// cast immediately on the way out of .json(), same as index.ts already
+// does. Node's own fetch types (from @types/node, not the DOM lib —
+// this tsconfig only includes "ES2020") declare Response.json() as
+// Promise<unknown> rather than Promise<any>, so leaving it uncast means
+// every property access on it fails to typecheck. tsx doesn't catch
+// this since it skips type-checking entirely, but tsc does — and tsc is
+// what the Docker build actually runs.
+interface ProxmoxNodesResponse {
+  data: ProxmoxNodeSummary[]
+}
+
+interface ZabbixHostGetResponse {
+  result?: ZabbixHost[]
+  error?: { message: string; data: string }
+}
+
 const ZABBIX_SERVER_NAME = 'Zabbix server'
 
 // Mirrors the (fixed) derivation logic in the client's zabbix.ts exactly
@@ -52,8 +69,8 @@ async function pollProxmox(port: string | number): Promise<void> {
     const response = await fetch(`http://localhost:${port}/proxmox/nodes`)
     if (!response.ok) throw new Error(`Proxmox poll failed: ${response.status}`)
 
-    const json = await response.json()
-    const nodes = json.data as ProxmoxNodeSummary[]
+    const json = await response.json() as ProxmoxNodesResponse
+    const nodes = json.data
 
     // Deliberately not pre-filtering to online nodes before recording a
     // status — that was the exact bug fixed in the client adapter this
@@ -85,10 +102,10 @@ async function pollZabbix(port: string | number): Promise<void> {
 
     if (!response.ok) throw new Error(`Zabbix poll failed: ${response.status}`)
 
-    const json = await response.json()
+    const json = await response.json() as ZabbixHostGetResponse
     if (json.error) throw new Error(`Zabbix poll error: ${json.error.message}`)
 
-    const hosts = json.result as ZabbixHost[]
+    const hosts = json.result ?? []
 
     for (const host of hosts) {
       if (host.name === ZABBIX_SERVER_NAME) continue
@@ -103,6 +120,7 @@ export function startPoller(port: string | number): void {
   const tick = async () => {
     await Promise.all([pollProxmox(port), pollZabbix(port)])
     pruneOldSnapshots()
+    console.log(`Snapshot poll completed at ${new Date().toISOString()}`)
   }
 
   // Run once immediately rather than waiting a full interval for the
