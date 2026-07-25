@@ -3,6 +3,8 @@ import { createProxyMiddleware } from 'http-proxy-middleware'
 import dotenv from 'dotenv'
 import { readFile } from 'fs/promises'
 import path from 'path'
+import { startPoller } from './poller'
+import { getDayBucketedHistory } from './db'
 
 dotenv.config()
 
@@ -115,6 +117,22 @@ app.get('/incidents', async (_req, res) => {
   }
 })
 
+// ── Full-category history (Proxmox API / Zabbix) ────────────────────
+// Proxmox Nodes and Power get their 90-day history from Prometheus,
+// which scrapes independently of whether anyone's looking at the page.
+// Proxmox API and Zabbix have no equivalent — this proxy poller does
+// the same job for them (see poller.ts), and this route hands back
+// whatever it's recorded so far, day-bucketed and ready for the client
+// to drop straight into the same UptimeDay[] shape either source uses.
+app.get('/history/:serviceId', (req, res) => {
+  try {
+    const days = getDayBucketedHistory(req.params.serviceId)
+    res.json(days)
+  } catch (error) {
+    res.status(500).json({ error: String(error) })
+  }
+})
+
 // ── Prometheus proxy ──────────────────────────────────────────────
 app.use(
   '/prometheus',
@@ -170,4 +188,5 @@ app.post('/zabbix', express.json(), async (req, res) => {
 // ── Start ──────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`Proxy running on port ${PORT}`)
+  startPoller(PORT)
 })
