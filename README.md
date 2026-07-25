@@ -193,6 +193,18 @@ Links used while learning the pieces of this stack — kept here rather than los
 - [Querying — PromQL basics](https://prometheus.io/docs/prometheus/latest/querying/basics/)
 - [Querying — the HTTP API](https://prometheus.io/docs/prometheus/latest/querying/api/) — specifically `/api/v1/query` and `/api/v1/query_range`, the two endpoints this project's adapters and history module actually call
 
+### Scraping / Polling
+
+Prometheus is itself a scraper — it's the reason Proxmox Nodes and Power get real 90-day history while Proxmox API and Zabbix originally didn't. `proxy/src/poller.ts` and `proxy/src/db.ts` are this project's own hand-built equivalent for those two categories: an independent background job that checks a source on a timer and records what it found, regardless of whether a browser happens to be open.
+
+- [Prometheus docs — Overview: how scraping actually works](https://prometheus.io/docs/introduction/overview/#what-is-prometheus) — the "pull" model this project's own poller borrows the shape of
+- [MDN — Using the Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch) — what `poller.ts` uses to call the proxy's own existing routes rather than duplicating upstream auth logic a second time
+- [Node.js — Timers (`setInterval`)](https://nodejs.org/api/timers.html#settimeout) — the actual trigger mechanism behind any polling-style scraper, not just this one
+- [Node.js — the built-in `node:sqlite` module](https://nodejs.org/api/sqlite.html) — what this project stores scraped snapshots in
+- [Cheerio documentation](https://cheerio.js.org/) — for scrapers that parse HTML rather than JSON (not what this project does — Proxmox and Zabbix both return structured JSON — but the standard tool once a source doesn't expose a clean API)
+- [Playwright documentation](https://playwright.dev/docs/intro) — for sources that only render content via client-side JavaScript, where a plain HTTP request returns nothing useful to parse
+- [`robots.txt` and crawling etiquette (MDN)](https://developer.mozilla.org/en-US/docs/Glossary/Robots.txt) — relevant the moment a scraper's target is a public website rather than an internal API you already control
+
 ### Proxmox VE API
 
 - [Proxmox VE API documentation](https://pve.proxmox.com/pve-docs/api-viewer/) — the interactive API viewer, more useful in practice than the static reference for finding the right endpoint
