@@ -1,11 +1,15 @@
-import type { DayStatus, UptimeDay } from './types'
+import type { DayStatus, ServiceStatus, UptimeDay } from './types'
 
-// Fetches real 90-day uptime history from Prometheus range queries.
-// Separate from the other adapters in this folder on purpose — this
-// answers "what happened over the last 90 days" rather than "what's the
-// state right now," so it's on its own polling cadence via its own hook
-// (useUptimeHistory) rather than living in the main services facade.
+// Fetches real 90-day uptime history. Proxmox Nodes and Power pull from
+// Prometheus range queries. Proxmox API and Zabbix have no Prometheus
+// backing at all, so they're routed to the proxy's own snapshot poller
+// instead — see the PROXY_URL section below. Separate from the other
+// adapters in this folder on purpose — this answers "what happened over
+// the last 90 days" rather than "what's the state right now," so it's
+// on its own polling cadence via its own hook (useUptimeHistory) rather
+// than living in the main services facade.
 
+const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001'
 const PROMETHEUS_URL = import.meta.env.VITE_PROMETHEUS_URL ?? 'http://10.10.10.105:9090'
 const HISTORY_DAYS = 90
 
@@ -176,13 +180,33 @@ async function fetchUpsHistory(): Promise<UptimeDay[]> {
   return buildUpsUptimeDays(results)
 }
 
+// Proxmox API and Zabbix history — backed by the proxy's own snapshot
+// poller (proxy/src/poller.ts, proxy/src/db.ts), not Prometheus. The
+// proxy already day-buckets this server-side using the same UTC-midnight
+// anchoring and "worst status of the day" rollup as everything else, so
+// this is just handing back what it returns.
+async function fetchProxySnapshotHistory(serviceId: string): Promise<UptimeDay[]> {
+  const response = await fetch(`${PROXY_URL}/history/${serviceId}`)
+
+  if (!response.ok) {
+    throw new Error(`History request failed for ${serviceId}: ${response.status}`)
+  }
+
+  return await response.json() as UptimeDay[]
+}
+
 // Returns a map of service id -> 90-day history, for every service that
-// actually has a Prometheus time series behind it. Proxmox API and Zabbix
-// services are deliberately absent from this map — their adapters only
-// ever see current state, there's no range query that could answer for
-// them. App.tsx falls back to the placeholder generator for any service
-// id not present here.
-export async function fetchUptimeHistory(): Promise<Record<string, UptimeDay[]>> {
+// actually has history behind it. Proxmox Nodes and Power come from
+// Prometheus; Proxmox API and Zabbix come from the proxy's own snapshot
+// poller. `services` is the live status list from useServiceStatus —
+// passed in specifically so this function doesn't need to independently
+// re-derive which Proxmox API / Zabbix ids currently exist, it just asks
+// the proxy for each one's recorded history. App.tsx falls back to the
+// placeholder generator for any service id not present in the returned
+// map (nothing recorded yet, or a fetch failed this poll).
+export async function fetchUptimeHistory(
+  services: ServiceStatus[] = []
+): Promise<Record<string, UptimeDay[]>> {
   const history: Record<string, UptimeDay[]> = {}
 
   const nodeInstances = await queryPrometheusInstant('up{job="node_exporter"}')
@@ -206,6 +230,23 @@ export async function fetchUptimeHistory(): Promise<Record<string, UptimeDay[]>>
   } catch {
     // UPS history unavailable this poll — App.tsx falls back to the
     // placeholder for this one id rather than failing the whole map.
+  }
+
+  const snapshotBackedServices = services.filter(
+    s => s.category === 'Proxmox API' || s.category === 'Zabbix'
+  )
+
+  const snapshotResults = await Promise.allSettled(
+    snapshotBackedServices.map(async service => {
+      const days = await fetchProxySnapshotHistory(service.id)
+      return { id: service.id, days }
+    })
+  )
+
+  for (const result of snapshotResults) {
+    if (result.status === 'fulfilled') {
+      history[result.value.id] = result.value.days
+    }
   }
 
   return history
