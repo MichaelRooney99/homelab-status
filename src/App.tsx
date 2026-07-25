@@ -65,7 +65,7 @@ function calculateUptimePercent(days: UptimeDay[]): number | undefined {
 
 export default function App() {
   const { statusPage, isLoading, isError } = useServiceStatus()
-  const { history } = useUptimeHistory()
+  const { history } = useUptimeHistory(statusPage?.services ?? [])
 
   if (isLoading) {
     return (
