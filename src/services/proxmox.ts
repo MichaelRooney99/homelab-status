@@ -35,21 +35,29 @@ export async function fetchProxmoxNodeStatus(): Promise<ServiceStatus[]> {
   const nodes = await queryProxmox<ProxmoxNodeSummary[]>('nodes')
 
   const onlineNodes = nodes.filter(n => n.status === 'online')
+  // Anything Proxmox itself doesn't report as "online" is genuinely
+  // down (or in a state Proxmox hasn't classified as online) — these
+  // previously vanished from the page entirely instead of showing as
+  // an outage, since the old code filtered them out before building
+  // the result at all. The ternary below that checked node.status
+  // could never actually reach its 'outage' branch, because only
+  // online nodes ever made it that far.
+  const offlineNodes = nodes.filter(n => n.status !== 'online')
 
-  const nodeStatuses = await Promise.allSettled(
+  const onlineStatuses = await Promise.allSettled(
     onlineNodes.map(node =>
       queryProxmox<ProxmoxNodeStatus>(`nodes/${node.node}/status`)
         .then(status => ({ node, status }))
     )
   )
 
-  return nodeStatuses
-    .filter(result => result.status === 'fulfilled')
+  const onlineResults: ServiceStatus[] = onlineStatuses
+    .filter((result): result is PromiseFulfilledResult<{
+      node: ProxmoxNodeSummary
+      status: ProxmoxNodeStatus
+    }> => result.status === 'fulfilled')
     .map(result => {
-      const { node, status } = (result as PromiseFulfilledResult<{
-        node: ProxmoxNodeSummary
-        status: ProxmoxNodeStatus
-      }>).value
+      const { node, status } = result.value
 
       const cpu = status.cpu ?? 0
       const memUsed = status.memory?.used ?? 0
@@ -73,7 +81,7 @@ export async function fetchProxmoxNodeStatus(): Promise<ServiceStatus[]> {
         id: `proxmox-${node.node}`,
         name: capitalize(node.node),
         category: 'Proxmox API',
-        status: node.status === 'online' ? 'operational' : 'outage',
+        status: 'operational',
         metadata: {
           cpu: `${cpuPercent}%`,
           memory: `${memPercent}%`,
@@ -81,4 +89,42 @@ export async function fetchProxmoxNodeStatus(): Promise<ServiceStatus[]> {
         },
       }
     })
+
+  // A node Proxmox itself reports as down can't answer a detailed status
+  // query — there's no cpu/memory/uptime to show, and that's fine. The
+  // outage itself is the information.
+  const offlineResults: ServiceStatus[] = offlineNodes.map(node => ({
+    id: `proxmox-${node.node}`,
+    name: capitalize(node.node),
+    category: 'Proxmox API',
+    status: 'outage',
+    metadata: {
+      cpu: '—',
+      memory: '—',
+      uptime: 'offline',
+    },
+  }))
+
+  // A node Proxmox reports as online, but whose detailed status query
+  // itself failed (network blip, timeout) — Promise.allSettled already
+  // isolates this from crashing the whole adapter, but previously it
+  // just vanished from the result the same way a truly offline node
+  // did. Surfacing it as an outage instead of dropping it, same
+  // reasoning as the branch above.
+  const unreachableResults: ServiceStatus[] = onlineStatuses
+    .map((result, index) => ({ result, node: onlineNodes[index] }))
+    .filter(({ result }) => result.status === 'rejected')
+    .map(({ node }) => ({
+      id: `proxmox-${node.node}`,
+      name: capitalize(node.node),
+      category: 'Proxmox API',
+      status: 'outage',
+      metadata: {
+        cpu: '—',
+        memory: '—',
+        uptime: 'unreachable',
+      },
+    }))
+
+  return [...onlineResults, ...offlineResults, ...unreachableResults]
 }
