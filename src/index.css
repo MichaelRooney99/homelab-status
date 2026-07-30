@@ -1,1 +1,50 @@
 @import "tailwindcss";
+
+/* Custom color tokens matching the portfolio site's real values, mapped
+   through @theme so Tailwind generates real utilities (bg-capstone-bg,
+   text-capstone-text, etc.) that reference runtime CSS variables rather
+   than static colors — this is what makes the light/dark swap possible
+   without a full component rewrite. Session 5 does the actual
+   component-by-component replacement of zinc-* usage; this just builds
+   the mechanism and proves it works. */
+@theme {
+  --color-capstone-bg: var(--theme-bg);
+  --color-capstone-bg-raised: var(--theme-bg-raised);
+  --color-capstone-text: var(--theme-text);
+  --color-capstone-muted: var(--theme-muted);
+  --color-capstone-subtle: var(--theme-subtle);
+  --color-capstone-accent: var(--theme-accent);
+  --color-capstone-accent-dim: var(--theme-accent-dim);
+  --color-capstone-border: var(--theme-border);
+}
+
+/* Dark is the default — matches how this app has always looked, and
+   avoids a flash of the wrong theme before the anti-flash script in
+   index.html (or this hook) has a chance to set data-theme explicitly. */
+:root {
+  color-scheme: dark;
+  --theme-bg: #0e0d0b;
+  --theme-bg-raised: #151410;
+  --theme-text: #f0ede8;
+  --theme-muted: #7a7670;
+  --theme-subtle: #2a2925;
+  --theme-accent: #c8622a;
+  --theme-accent-dim: #7a3c1a;
+  --theme-border: #232220;
+}
+
+/* Warm-toned light palette, derived to match the portfolio's dark theme's
+   character rather than a generic inversion — cream/off-white background
+   instead of stark white, warm charcoal text instead of pure black, same
+   accent color kept identical across both themes on purpose. */
+[data-theme="light"] {
+  color-scheme: light;
+  --theme-bg: #faf7f2;
+  --theme-bg-raised: #ffffff;
+  --theme-text: #201e1a;
+  --theme-muted: #8a8479;
+  --theme-subtle: #efebe3;
+  --theme-accent: #c8622a;
+  --theme-accent-dim: #7a3c1a;
+  --theme-border: #e2ddd0;
+}

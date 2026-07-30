@@ -7,6 +7,7 @@ import IncidentList from './components/IncidentList'
 import DaysSinceIncident from './components/DaysSinceIncident'
 import SkeletonHealth from './components/SkeletonHealth'
 import SkeletonServiceRow from './components/SkeletonServiceRow'
+import ThemeToggle from './components/ThemeToggle'
 import type { ServiceStatus, Status, UptimeDay } from './services/types'
 
 const CATEGORY_ORDER = [
@@ -74,7 +75,7 @@ export default function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+      <div className="min-h-screen bg-capstone-bg text-capstone-text">
         <div
           className="max-w-3xl mx-auto px-4 py-12 space-y-8"
           role="status"
@@ -83,13 +84,13 @@ export default function App() {
           <span className="sr-only">Loading status...</span>
 
           <header>
-            <div className="h-3 w-40 bg-zinc-800 rounded mb-2 animate-pulse" />
-            <div className="h-7 w-56 bg-zinc-800 rounded animate-pulse" />
+            <div className="h-3 w-40 bg-capstone-subtle rounded mb-2 animate-pulse" />
+            <div className="h-7 w-56 bg-capstone-subtle rounded animate-pulse" />
           </header>
 
           <SkeletonHealth />
 
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-6">
+          <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6">
             <SkeletonServiceRow />
             <SkeletonServiceRow />
             <SkeletonServiceRow />
@@ -101,7 +102,7 @@ export default function App() {
 
   if (isError || !statusPage) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+      <div className="min-h-screen bg-capstone-bg flex items-center justify-center">
         <p className="text-red-400 text-sm" role="alert">
           Unable to reach monitoring infrastructure.
         </p>
@@ -113,16 +114,19 @@ export default function App() {
   const outageCount = statusPage.services.filter(s => s.status === 'outage').length
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-capstone-bg text-capstone-text">
       <div className="max-w-3xl mx-auto px-4 py-12 space-y-8">
 
-        <header>
-          <p className="text-xs uppercase tracking-widest text-zinc-500 mb-1">
-            status.michaelrooney.dev
-          </p>
-          <h1 className="text-2xl font-semibold text-zinc-100">
-            Homelab Status
-          </h1>
+        <header className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-capstone-muted mb-1">
+              status.michaelrooney.dev
+            </p>
+            <h1 className="text-2xl font-semibold text-capstone-text">
+              Homelab Status
+            </h1>
+          </div>
+          <ThemeToggle />
         </header>
 
         <OverallHealth

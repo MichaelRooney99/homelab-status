@@ -5,6 +5,22 @@
     <link rel="icon" type="image/svg+xml" href="/public/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Homelab Status</title>
+    <script>
+      // Runs synchronously before first paint, so there's no flash of
+      // the wrong theme while React boots. Mirrors the same logic
+      // useTheme.ts uses after mount — kept in sync deliberately, not
+      // sharing code, since this has to run before any JS module loads.
+      (function () {
+        var stored = localStorage.getItem('capstone-theme');
+        var theme =
+          stored === 'dark' || stored === 'light'
+            ? stored
+            : window.matchMedia('(prefers-color-scheme: light)').matches
+              ? 'light'
+              : 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
