@@ -185,6 +185,18 @@ Links used while learning the pieces of this stack — kept here rather than los
 - [The Twelve-Factor App — Config](https://12factor.net/config)
 - [YouTube playlist](https://www.youtube.com/watch?v=k_0ZzvHbNBQ&list=PLillGF-RfqbYRpji8t4SxUkMxfowG4Kqp) — also listed below, it's amazing and would recommend!!
 
+### Tailwind CSS v4
+
+- [Tailwind CSS — Theme variables](https://tailwindcss.com/docs/theme) — the `@theme` directive, the mechanism this project's light/dark toggle is actually built on
+- [Tailwind CSS — Functions and directives](https://tailwindcss.com/docs/functions-and-directives) — `@import`, `@theme`, `@plugin`, and the rest of the CSS-native config surface that replaced `tailwind.config.js` in v4
+- [Tailwind CSS — Adding custom styles](https://tailwindcss.com/docs/adding-custom-styles) — how theme values feed into generated utility classes
+- [Tailwind CSS — Dark Mode](https://tailwindcss.com/docs/dark-mode) — the `dark:` variant approach this project deliberately did *not* use for its theme toggle, in favor of CSS-variable-backed tokens (see the journal entry below for why)
+- [MDN — `prefers-color-scheme`](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme) — the media feature behind respecting a visitor's OS-level theme preference
+- [MDN — `Window.matchMedia()`](https://developer.mozilla.org/en-US/docs/Web/API/Window/matchMedia) — the JS API used to read that preference synchronously
+- [MDN — `Window.localStorage`](https://developer.mozilla.org/en-US/docs/Web/API/Window/localStorage) — how the theme choice persists across reloads
+
+Full writeup of how these pieces fit together — the anti-flash inline script, the OS-preference fallback, and specifically how Tailwind v4's `@theme` directive makes a CSS-variable-backed theme system possible without a `dark:` variant on every element — in the journal: [The Half-Second Nobody's Supposed to See](https://michaelrooney.dev/journal/07-30-2026.html).
+
 ### TanStack Query
 
 - [Installation](https://tanstack.com/query/latest/docs/framework/react/installation)
