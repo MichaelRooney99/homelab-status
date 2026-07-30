@@ -1,5 +1,27 @@
 [
   {
+    "id": "2026-07-30-dega-disk-exhaustion",
+    "title": "Dega disk exhaustion blocked capstone deploys",
+    "status": "resolved",
+    "createdAt": "2026-07-30T17:43:00.000Z",
+    "updatedAt": "2026-07-30T18:10:00.000Z",
+    "affectedServices": [],
+    "updates": [
+      {
+        "timestamp": "2026-07-30T17:43:00.000Z",
+        "message": "Deploy blocked — docker compose up -d --build failed with \"no space left on device\" on Dega. Root cause: the root disk was only 2.8GB total, and Docker's build cache had grown past 1GB across many --build runs over the last several sessions with nothing ever pruning it. The live site itself stayed up throughout — this only blocked new deploys, not existing traffic."
+      },
+      {
+        "timestamp": "2026-07-30T17:55:00.000Z",
+        "message": "docker builder prune -af reclaimed 736.8MB, enough to unblock a redeploy — confirmed working end to end: Compose stack correctly reported \"rebuilt\", health check 200. Also the first real confirmation that the changed_when fix from a previous session works correctly on a genuine rebuild, not just a code review."
+      },
+      {
+        "timestamp": "2026-07-30T18:10:00.000Z",
+        "message": "Applied the durable fix, not just the temporary one: resized the VM's virtual disk from 2.8GB to 13GB via qm resize on the Proxmox host, then growpart + resize2fs inside the guest to claim the new space live, with no downtime. Root disk now at 21% used with 9.6GB free. Pruning bought time; the actual problem was the VM being undersized from the start for repeated multi-stage Docker builds."
+      }
+    ]
+  },
+  {
     "id": "2026-07-23-history-day-boundary",
     "title": "90-day uptime history occasionally showing an incorrect status for a given day",
     "status": "resolved",
