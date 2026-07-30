@@ -73,16 +73,23 @@ homelab-status/
 │   │   │   ├── prometheus.ts
 │   │   │   ├── proxmox.ts
 │   │   │   ├── zabbix.ts
-│   │   │   ├── history.ts  ← 90-day uptime history (Prometheus range queries)
-│   │   │   └── index.ts    ← facade — Promise.allSettled across all adapters
+│   │   │   ├── incidents.ts   ← incident history adapter
+│   │   │   ├── history.ts     ← 90-day uptime history — Prometheus for Nodes/Power, proxy snapshot poller for Proxmox API/Zabbix
+│   │   │   └── index.ts       ← facade — Promise.allSettled across service adapters, incidents fetched separately
 │   │   ├── hooks/
 │   │   │   ├── useServiceStatus.ts    ← live status, 60s poll
-│   │   │   └── useUptimeHistory.ts    ← history, hourly poll
+│   │   │   ├── useUptimeHistory.ts    ← history, hourly poll, takes the live service list as an argument
+│   │   │   └── useTabAlert.ts         ← reflects alert state in the tab title and favicon
 │   │   ├── components/
 │   │   │   ├── StatusBadge.tsx
 │   │   │   ├── ServiceRow.tsx
 │   │   │   ├── OverallHealth.tsx
-│   │   │   └── UptimeBars.tsx
+│   │   │   ├── UptimeBars.tsx
+│   │   │   ├── IncidentBadge.tsx
+│   │   │   ├── IncidentList.tsx        ← per-card collapsible incident timeline
+│   │   │   ├── DaysSinceIncident.tsx   ← days-since-last-incident counter
+│   │   │   ├── SkeletonHealth.tsx      ← loading-state placeholder matching OverallHealth
+│   │   │   └── SkeletonServiceRow.tsx  ← loading-state placeholder matching ServiceRow
 │   │   ├── App.tsx
 │   │   └── main.tsx
 │   ├── Dockerfile
@@ -90,14 +97,20 @@ homelab-status/
 │   └── .env
 ├── proxy/
 │   ├── src/
-│   │   └── index.ts
+│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, plus the Proxmox/Zabbix proxy passthroughs
+│   │   ├── db.ts        ← node:sqlite storage for the snapshot poller
+│   │   └── poller.ts    ← independent 15-minute background poll for Proxmox API/Zabbix history
+│   ├── incidents.json   ← hand-edited, git-tracked incident data, bind-mounted read-only into the container
 │   ├── Dockerfile
 │   └── .env
-├── docker-compose.yml
+├── docker-compose.yml   ← includes a named volume (snapshots-data) so poller history survives redeploys
+├── README.md
 └── .dockerignore
 ```
 
 **Adding a new data source:** write an adapter in `src/services/` exporting a `fetchXxxStatus(): Promise<ServiceStatus[]>`, import it in `services/index.ts`, add it to the `Promise.allSettled` array. That's the whole integration surface — the rest of the app picks it up automatically once it returns the normalized `ServiceStatus` shape from `types.ts`.
+
+**Adding a new proxy route:** remember the checklist this project learned the hard way — proxy route → client adapter → `nginx.conf` forward rule → verify through the actual public domain, not just the direct proxy port. Skipping the nginx step is what took `/incidents` from "works in dev" to "silently empty in production" the first time.
 
 ---
 
@@ -136,9 +149,30 @@ The playbooks and full infrastructure context (which host, which VLAN, which fir
 
 ## Uptime history
 
-The 90-day uptime bars pull real data from Prometheus `query_range` calls for the two categories Prometheus actually has time-series history for — **Proxmox Nodes** and **Power**. Prometheus retention is 30 days, so days 31–90 show as `no-data` (grey) rather than a guessed value — that's accurate reporting, not a bug.
+The 90-day uptime bars pull from two different sources depending on category. **Proxmox Nodes** and **Power** query Prometheus's `query_range` API directly — Prometheus retention is 30 days, so days 31–90 show as `no-data` (grey) rather than a guessed value, which is accurate reporting, not a bug.
 
-**Proxmox API** and **Zabbix** categories intentionally show placeholder-only history (today's reading, everything else grey). Neither of those adapters has a queryable history source — they only ever see current state through a REST call or a JSON-RPC call, not a stored time series. There's no honest data available for those two yet; the placeholder is the correct answer for what those sources can currently tell you, not a gap that got missed.
+**Proxmox API** and **Zabbix** have no Prometheus backing at all — neither adapter has ever had a queryable history source of its own, since both only ever ask "what's the state right now" through a REST or JSON-RPC call. The proxy runs its own independent background poller (`proxy/src/poller.ts`) every 15 minutes, storing snapshots in a local `node:sqlite` database (`proxy/src/db.ts`) and rolling each day up to its worst observed status. Same honesty principle as the Prometheus side: history for these two categories only exists from whenever the poller started running — there's no way to reconstruct what happened before it existed, so a freshly deployed instance will show mostly `no-data` here too, for a while.
+
+---
+
+## Public API
+
+Every route below is a plain `GET` returning JSON, reachable at `https://status.michaelrooney.dev/<path>` — no authentication, read-only.
+
+|Route|Returns|
+|---|---|
+|`/health`|`{ "status": "ok" }` — proxy liveness check|
+|`/incidents`|Array of `Incident` objects — id, title, status, timestamps, affected services, and a timeline of updates. See `types.ts` for the full shape.|
+|`/history/:serviceId`|90-day day-bucketed history for one service, `[{ "date": "2026-07-25", "status": "operational" }, ...]`. Service ids match what `/incidents`' `affectedServices` field and the live status page use — e.g. `proxmox-ankhh`, `ups-cyberpower`, `zabbix-10781`.|
+
+Example:
+
+```bash
+curl https://status.michaelrooney.dev/incidents
+curl https://status.michaelrooney.dev/history/proxmox-ankhh
+```
+
+There's no single combined "everything at once" endpoint yet — an external consumer currently needs to hit these separately, the same way the client itself does. That's a deliberate scope call, not an oversight: see `16-Next-Round Functionality.md` (in the project's Obsidian vault, if you have access to it) for the reasoning on why a combined feed wasn't built speculatively.
 
 ---
 

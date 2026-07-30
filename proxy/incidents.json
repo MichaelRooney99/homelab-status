@@ -2,7 +2,7 @@
   {
     "id": "2026-07-23-history-day-boundary",
     "title": "90-day uptime history occasionally showing an incorrect status for a given day",
-    "status": "monitoring",
+    "status": "resolved",
     "createdAt": "2026-07-23T18:00:00.000Z",
     "updatedAt": "2026-07-23T18:30:00.000Z",
     "affectedServices": [],

@@ -1,8 +1,12 @@
 import { useServiceStatus } from './hooks/useServiceStatus'
 import { useUptimeHistory } from './hooks/useUptimeHistory'
+import { useTabAlert } from './hooks/useTabAlert'
 import OverallHealth from './components/OverallHealth'
 import ServiceRow from './components/ServiceRow'
 import IncidentList from './components/IncidentList'
+import DaysSinceIncident from './components/DaysSinceIncident'
+import SkeletonHealth from './components/SkeletonHealth'
+import SkeletonServiceRow from './components/SkeletonServiceRow'
 import type { ServiceStatus, Status, UptimeDay } from './services/types'
 
 const CATEGORY_ORDER = [
@@ -66,13 +70,31 @@ function calculateUptimePercent(days: UptimeDay[]): number | undefined {
 export default function App() {
   const { statusPage, isLoading, isError } = useServiceStatus()
   const { history } = useUptimeHistory(statusPage?.services ?? [])
+  useTabAlert(statusPage)
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
-        <p className="text-zinc-500 text-sm" role="status" aria-live="polite">
-          Loading status...
-        </p>
+      <div className="min-h-screen bg-zinc-950 text-zinc-100">
+        <div
+          className="max-w-3xl mx-auto px-4 py-12 space-y-8"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="sr-only">Loading status...</span>
+
+          <header>
+            <div className="h-3 w-40 bg-zinc-800 rounded mb-2 animate-pulse" />
+            <div className="h-7 w-56 bg-zinc-800 rounded animate-pulse" />
+          </header>
+
+          <SkeletonHealth />
+
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-6">
+            <SkeletonServiceRow />
+            <SkeletonServiceRow />
+            <SkeletonServiceRow />
+          </div>
+        </div>
       </div>
     )
   }
@@ -109,6 +131,8 @@ export default function App() {
           serviceCount={statusPage.services.length}
           outageCount={outageCount}
         />
+
+        <DaysSinceIncident incidents={statusPage.incidents} />
 
         <IncidentList incidents={statusPage.incidents} />
 
