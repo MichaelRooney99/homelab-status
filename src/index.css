@@ -44,8 +44,12 @@
 
 /* Warm-toned light palette, derived to match the portfolio's dark theme's
    character rather than a generic inversion — cream/off-white background
-   instead of stark white, warm charcoal text instead of pure black, same
-   accent color kept identical across both themes on purpose. */
+   instead of stark white, warm charcoal text instead of pure black.
+   --theme-accent is deliberately NOT identical to dark mode's value here
+   — #c8622a measures ~4.0:1 against a white card, short of WCAG AA's
+   4.5:1 for normal text. #a8501f is the same orange scaled darker
+   (~5.5:1 against white), so it still reads as "the same accent," just
+   tuned per theme the same way every other token already is. */
 [data-theme="light"] {
   color-scheme: light;
   --theme-bg: #faf7f2;
@@ -53,7 +57,7 @@
   --theme-text: #201e1a;
   --theme-muted: #8a8479;
   --theme-subtle: #efebe3;
-  --theme-accent: #c8622a;
+  --theme-accent: #a8501f;
   --theme-accent-dim: #7a3c1a;
   --theme-border: #e2ddd0;
 }
