@@ -32,6 +32,25 @@ try {
   // Already migrated — nothing to do.
 }
 
+// Auto-drafted incidents live here rather than in incidents.json — that
+// file is bind-mounted :ro into the proxy container on purpose (see
+// docker-compose.yml), so the running proxy genuinely cannot write to
+// it, full stop. This table reuses the same named volume snapshots.db
+// already has, which is already writable and already survives
+// redeploys — no new infrastructure, just a second table in
+// infrastructure that already exists. See 16-Next-Round Functionality.md
+// for the full reasoning.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS drafted_incidents (
+    id         TEXT PRIMARY KEY,
+    service_id TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    updates    TEXT NOT NULL
+  )
+`)
+
 const RETENTION_DAYS = 90
 const HISTORY_DAYS = 90
 
@@ -141,4 +160,111 @@ export function getRawSnapshots(serviceId: string): RawSnapshotRow[] {
       'SELECT timestamp, status, response_time_ms FROM snapshots WHERE service_id = ? AND timestamp >= ? ORDER BY timestamp ASC'
     )
     .all(serviceId, cutoff) as unknown as RawSnapshotRow[]
+}
+
+// ── Auto-drafted incidents ──────────────────────────────────────────
+
+// Most-recent-first, capped at `count` — the poller asks for the last
+// two readings to check whether a service just crossed the drafting or
+// auto-resolve threshold. Deliberately re-derived from the snapshots
+// table on every call rather than tracked as an in-memory streak
+// counter in poller.ts: a counter would reset silently on every proxy
+// restart/redeploy, quietly losing track of where a service was
+// mid-streak. The snapshots table is already this app's single source
+// of truth for status history — asking it one more question is less
+// risk than introducing a second, volatile source that could disagree
+// with it.
+export function getLastStatuses(serviceId: string, count: number): string[] {
+  const rows = db
+    .prepare(
+      'SELECT status FROM snapshots WHERE service_id = ? ORDER BY timestamp DESC LIMIT ?'
+    )
+    .all(serviceId, count) as unknown as { status: string }[]
+
+  return rows.map(row => row.status)
+}
+
+interface DraftedIncidentRow {
+  id: string
+  service_id: string
+  status: string
+  created_at: number
+  updated_at: number
+  updates: string
+}
+
+// At most one *active* (non-resolved) drafted incident per service at a
+// time — a second sustained-outage streak on the same service while one
+// is already open should extend the existing incident, not spawn a
+// duplicate. Resolved drafted incidents for the same service are left
+// alone; a new outage after resolution correctly starts a new incident.
+export function getActiveDraftedIncident(serviceId: string): DraftedIncidentRow | undefined {
+  return db
+    .prepare(
+      `SELECT * FROM drafted_incidents WHERE service_id = ? AND status != 'resolved' LIMIT 1`
+    )
+    .get(serviceId) as DraftedIncidentRow | undefined
+}
+
+export function createDraftedIncident(serviceId: string, timestamp: number): void {
+  const id = `auto-${serviceId}-${timestamp}`
+  const updates = JSON.stringify([
+    {
+      timestamp: new Date(timestamp * 1000).toISOString(),
+      message: 'Auto-detected: 2 consecutive outage readings (at least 30 minutes of sustained outage).',
+    },
+  ])
+
+  db.prepare(
+    `INSERT INTO drafted_incidents (id, service_id, status, created_at, updated_at, updates)
+     VALUES (?, ?, 'investigating', ?, ?, ?)`
+  ).run(id, serviceId, timestamp, timestamp, updates)
+}
+
+export function resolveDraftedIncident(id: string, timestamp: number): void {
+  const row = db
+    .prepare('SELECT updates FROM drafted_incidents WHERE id = ?')
+    .get(id) as { updates: string } | undefined
+  if (!row) return
+
+  const updates = JSON.parse(row.updates) as Array<{ timestamp: string; message: string }>
+  updates.push({
+    timestamp: new Date(timestamp * 1000).toISOString(),
+    message: 'Auto-resolved: 2 consecutive operational readings.',
+  })
+
+  db.prepare(
+    `UPDATE drafted_incidents SET status = 'resolved', updated_at = ?, updates = ? WHERE id = ?`
+  ).run(timestamp, JSON.stringify(updates), id)
+}
+
+// Shaped to match the client's Incident type directly (see types.ts) so
+// index.ts can merge this array with incidents.json's contents and hand
+// the combined result straight to the client with no further mapping.
+// 'identified'/'monitoring' are never produced here — a drafted
+// incident only ever has two real states, active or resolved, and
+// 'investigating' is the honest label for "detected automatically,
+// nobody has looked at it yet."
+export function getAllDraftedIncidents(): Array<{
+  id: string
+  title: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  affectedServices: string[]
+  updates: Array<{ timestamp: string; message: string }>
+  source: 'auto'
+}> {
+  const rows = db.prepare('SELECT * FROM drafted_incidents').all() as unknown as DraftedIncidentRow[]
+
+  return rows.map(row => ({
+    id: row.id,
+    title: `Sustained outage detected: ${row.service_id}`,
+    status: row.status,
+    createdAt: new Date(row.created_at * 1000).toISOString(),
+    updatedAt: new Date(row.updated_at * 1000).toISOString(),
+    affectedServices: [row.service_id],
+    updates: JSON.parse(row.updates),
+    source: 'auto' as const,
+  }))
 }
