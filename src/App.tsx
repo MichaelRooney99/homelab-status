@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { useServiceStatus } from './hooks/useServiceStatus'
 import { useUptimeHistory } from './hooks/useUptimeHistory'
 import { useTabAlert } from './hooks/useTabAlert'
+import { useCommandPalette } from './hooks/useCommandPalette'
 import OverallHealth from './components/OverallHealth'
 import ServiceRow from './components/ServiceRow'
 import IncidentList from './components/IncidentList'
@@ -8,6 +10,8 @@ import DaysSinceIncident from './components/DaysSinceIncident'
 import SkeletonHealth from './components/SkeletonHealth'
 import SkeletonServiceRow from './components/SkeletonServiceRow'
 import ThemeToggle from './components/ThemeToggle'
+import ServiceDetailModal from './components/ServiceDetailModal'
+import CommandPalette from './components/CommandPalette'
 import type { ServiceStatus, Status, UptimeDay } from './services/types'
 
 const CATEGORY_ORDER = [
@@ -72,6 +76,13 @@ export default function App() {
   const { statusPage, isLoading, isError } = useServiceStatus()
   const { history } = useUptimeHistory(statusPage?.services ?? [])
   useTabAlert(statusPage)
+  const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null)
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
+  const [focusIncidentId, setFocusIncidentId] = useState<string | null>(null)
+
+  // Disabled while the detail modal is already open — avoids stacking
+  // two modals on top of each other from a single keypress.
+  const commandPalette = useCommandPalette(Boolean(selectedService))
 
   if (isLoading) {
     return (
@@ -113,6 +124,16 @@ export default function App() {
   const grouped = groupByCategory(statusPage.services)
   const outageCount = statusPage.services.filter(s => s.status === 'outage').length
 
+  const visibleGroups =
+    categoryFilter && grouped.has(categoryFilter)
+      ? new Map([[categoryFilter, grouped.get(categoryFilter)!]])
+      : grouped
+
+  const categoryCounts = Array.from(grouped.entries()).map(([name, services]) => ({
+    name,
+    count: services.length,
+  }))
+
   return (
     <div className="min-h-screen bg-capstone-bg text-capstone-text">
       <div className="max-w-3xl mx-auto px-4 py-12 space-y-8">
@@ -126,7 +147,18 @@ export default function App() {
               Homelab Status
             </h1>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={commandPalette.open}
+              aria-label="Open command palette"
+              className="flex items-center gap-1.5 text-xs text-capstone-muted border border-capstone-border rounded px-2 py-1.5 hover:text-capstone-text hover:border-capstone-muted transition-colors"
+            >
+              <span className="hidden sm:inline">Jump to…</span>
+              <kbd className="font-sans">⌘K</kbd>
+            </button>
+            <ThemeToggle />
+          </div>
         </header>
 
         <OverallHealth
@@ -138,9 +170,24 @@ export default function App() {
 
         <DaysSinceIncident incidents={statusPage.incidents} />
 
-        <IncidentList incidents={statusPage.incidents} />
+        <IncidentList incidents={statusPage.incidents} focusId={focusIncidentId} />
 
-        {Array.from(grouped.entries()).map(([category, services]) => (
+        {categoryFilter && (
+          <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs text-zinc-400">
+            <span>
+              Filtered to <span className="text-zinc-100">{categoryFilter}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setCategoryFilter(null)}
+              className="text-zinc-400 hover:text-zinc-100 underline underline-offset-2"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
+        {Array.from(visibleGroups.entries()).map(([category, services]) => (
           <section key={category}>
             <h2 className="text-xs uppercase tracking-widest text-zinc-500 mb-3">
               {category}
@@ -159,6 +206,7 @@ export default function App() {
                     service={service}
                     days={days}
                     uptimePercent={uptimePercent}
+                    onSelect={setSelectedService}
                   />
                 )
               })}
@@ -171,6 +219,26 @@ export default function App() {
         </footer>
 
       </div>
+
+      {selectedService && (
+        <ServiceDetailModal
+          service={selectedService}
+          incidents={statusPage.incidents}
+          onClose={() => setSelectedService(null)}
+        />
+      )}
+
+      {commandPalette.isOpen && (
+        <CommandPalette
+          services={statusPage.services}
+          categories={categoryCounts}
+          incidents={statusPage.incidents}
+          onClose={commandPalette.close}
+          onSelectService={setSelectedService}
+          onSelectCategory={setCategoryFilter}
+          onSelectIncident={setFocusIncidentId}
+        />
+      )}
     </div>
   )
 }

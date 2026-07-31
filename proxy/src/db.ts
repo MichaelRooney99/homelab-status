@@ -20,19 +20,32 @@ db.exec(`
   )
 `)
 
+// CREATE TABLE IF NOT EXISTS only helps for a brand-new database — this
+// table already has real accumulated production history, so adding a
+// column needs an explicit ALTER TABLE. SQLite has no "ADD COLUMN IF
+// NOT EXISTS", so this is guarded with a try/catch instead: the first
+// time this runs against an already-migrated database, ALTER TABLE
+// throws "duplicate column name," which is expected and safe to ignore.
+try {
+  db.exec(`ALTER TABLE snapshots ADD COLUMN response_time_ms INTEGER`)
+} catch {
+  // Already migrated — nothing to do.
+}
+
 const RETENTION_DAYS = 90
 const HISTORY_DAYS = 90
 
 const insertStmt = db.prepare(
-  'INSERT OR REPLACE INTO snapshots (service_id, timestamp, status) VALUES (?, ?, ?)'
+  'INSERT OR REPLACE INTO snapshots (service_id, timestamp, status, response_time_ms) VALUES (?, ?, ?, ?)'
 )
 
 export function recordSnapshot(
   serviceId: string,
   status: string,
+  responseTimeMs: number | null = null,
   timestamp: number = Math.floor(Date.now() / 1000)
 ): void {
-  insertStmt.run(serviceId, timestamp, status)
+  insertStmt.run(serviceId, timestamp, status, responseTimeMs)
 }
 
 export function pruneOldSnapshots(): void {
@@ -105,4 +118,27 @@ export function getDayBucketedHistory(
   }
 
   return result
+}
+
+interface RawSnapshotRow {
+  timestamp: number
+  status: string
+  response_time_ms: number | null
+}
+
+const RECENT_HOURS = 24
+
+// Unlike getDayBucketedHistory, this returns every individual reading
+// from the last 24 hours rather than one rolled-up value per day — the
+// per-service detail view needs the real granularity to draw a
+// response-time chart and a status log, not a single worst-of-day
+// verdict. Same data source (this table), different shape of question.
+export function getRawSnapshots(serviceId: string): RawSnapshotRow[] {
+  const cutoff = Math.floor(Date.now() / 1000) - RECENT_HOURS * 3600
+
+  return db
+    .prepare(
+      'SELECT timestamp, status, response_time_ms FROM snapshots WHERE service_id = ? AND timestamp >= ? ORDER BY timestamp ASC'
+    )
+    .all(serviceId, cutoff) as unknown as RawSnapshotRow[]
 }

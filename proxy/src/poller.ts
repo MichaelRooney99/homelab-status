@@ -66,7 +66,15 @@ function deriveZabbixStatus(interfaces: ZabbixInterface[]): string {
 // both the browser (via the client adapter) and this poller.
 async function pollProxmox(port: string | number): Promise<void> {
   try {
+    const start = Date.now()
     const response = await fetch(`http://localhost:${port}/proxmox/nodes`)
+    // This is the time for the whole /proxmox/nodes call, covering
+    // every node in one request — not a true per-node latency, since
+    // Proxmox's own API returns the full node list in a single response.
+    // Recorded identically against every node in this batch. Honest
+    // about what it actually measures rather than implying a precision
+    // this endpoint shape can't give.
+    const responseTimeMs = Date.now() - start
     if (!response.ok) throw new Error(`Proxmox poll failed: ${response.status}`)
 
     const json = await response.json() as ProxmoxNodesResponse
@@ -78,7 +86,7 @@ async function pollProxmox(port: string | number): Promise<void> {
     // not silently skipped.
     for (const node of nodes) {
       const status = node.status === 'online' ? 'operational' : 'outage'
-      recordSnapshot(`proxmox-${node.node}`, status)
+      recordSnapshot(`proxmox-${node.node}`, status, responseTimeMs)
     }
   } catch (error) {
     console.error('Proxmox poll failed:', error)
@@ -87,6 +95,7 @@ async function pollProxmox(port: string | number): Promise<void> {
 
 async function pollZabbix(port: string | number): Promise<void> {
   try {
+    const start = Date.now()
     const response = await fetch(`http://localhost:${port}/zabbix`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -99,6 +108,9 @@ async function pollZabbix(port: string | number): Promise<void> {
         id: 1,
       }),
     })
+    // Same batch-level caveat as the Proxmox timing above — one
+    // host.get call covers every host, this isn't true per-host latency.
+    const responseTimeMs = Date.now() - start
 
     if (!response.ok) throw new Error(`Zabbix poll failed: ${response.status}`)
 
@@ -109,7 +121,7 @@ async function pollZabbix(port: string | number): Promise<void> {
 
     for (const host of hosts) {
       if (host.name === ZABBIX_SERVER_NAME) continue
-      recordSnapshot(`zabbix-${host.hostid}`, deriveZabbixStatus(host.interfaces))
+      recordSnapshot(`zabbix-${host.hostid}`, deriveZabbixStatus(host.interfaces), responseTimeMs)
     }
   } catch (error) {
     console.error('Zabbix poll failed:', error)

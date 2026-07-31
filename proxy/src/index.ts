@@ -4,7 +4,7 @@ import dotenv from 'dotenv'
 import { readFile } from 'fs/promises'
 import path from 'path'
 import { startPoller } from './poller'
-import { getDayBucketedHistory } from './db'
+import { getDayBucketedHistory, getRawSnapshots } from './db'
 
 dotenv.config()
 
@@ -128,6 +128,23 @@ app.get('/history/:serviceId', (req, res) => {
   try {
     const days = getDayBucketedHistory(req.params.serviceId)
     res.json(days)
+  } catch (error) {
+    res.status(500).json({ error: String(error) })
+  }
+})
+
+// ── Recent raw snapshots (per-service detail view) ───────────────────
+// Unlike /history/:serviceId, this returns every individual reading
+// from the last 24 hours rather than one rolled-up value per day —
+// the detail view needs real granularity to draw a response-time chart
+// and a status log, not a single worst-of-day verdict. Only meaningful
+// for Proxmox API / Zabbix (the two categories this proxy's own poller
+// backs) — Proxmox Nodes and Power get their recent detail straight
+// from Prometheus client-side, same split as the 90-day history.
+app.get('/history/:serviceId/recent', (req, res) => {
+  try {
+    const rows = getRawSnapshots(req.params.serviceId)
+    res.json(rows)
   } catch (error) {
     res.status(500).json({ error: String(error) })
   }
