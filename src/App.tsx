@@ -143,7 +143,7 @@ export default function App() {
             <p className="text-xs uppercase tracking-widest text-capstone-muted mb-1">
               status.michaelrooney.dev
             </p>
-            <h1 className="text-2xl font-semibold text-capstone-text">
+            <h1 className="text-2xl font-serif text-capstone-text">
               Homelab Status
             </h1>
           </div>
@@ -173,14 +173,14 @@ export default function App() {
         <IncidentList incidents={statusPage.incidents} focusId={focusIncidentId} />
 
         {categoryFilter && (
-          <div className="flex items-center justify-between rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs text-zinc-400">
+          <div className="flex items-center justify-between rounded-lg border border-capstone-border bg-capstone-bg-raised px-4 py-2 text-xs text-capstone-muted">
             <span>
-              Filtered to <span className="text-zinc-100">{categoryFilter}</span>
+              Filtered to <span className="text-capstone-text">{categoryFilter}</span>
             </span>
             <button
               type="button"
               onClick={() => setCategoryFilter(null)}
-              className="text-zinc-400 hover:text-zinc-100 underline underline-offset-2"
+              className="text-capstone-muted hover:text-capstone-text underline underline-offset-2"
             >
               Clear
             </button>
@@ -189,10 +189,10 @@ export default function App() {
 
         {Array.from(visibleGroups.entries()).map(([category, services]) => (
           <section key={category}>
-            <h2 className="text-xs uppercase tracking-widest text-zinc-500 mb-3">
+            <h2 className="font-serif text-xs uppercase tracking-widest text-capstone-muted mb-3">
               {category}
             </h2>
-            <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-6">
+            <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6">
               {services.map(service => {
                 const realHistory = history[service.id]
                 const days = realHistory ?? generatePlaceholderDays(service.status)
@@ -214,7 +214,7 @@ export default function App() {
           </section>
         ))}
 
-        <footer className="text-xs text-zinc-600 text-center pt-4">
+        <footer className="text-xs text-capstone-muted text-center pt-4">
           Polling every 60 seconds · Built with React + TanStack Query
         </footer>
 
