@@ -81,6 +81,14 @@ function IncidentCard({ incident, forceOpen }: { incident: Incident; forceOpen: 
         <span className="flex items-center gap-2">
           <ChevronIcon open={isOpen} />
           <h3 className="text-sm font-medium text-capstone-text">{incident.title}</h3>
+          {incident.source === 'auto' && (
+            <span
+              className="shrink-0 rounded border border-capstone-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-capstone-muted"
+              title="Automatically detected from sustained status readings, not hand-written"
+            >
+              Auto
+            </span>
+          )}
         </span>
         <IncidentBadge status={incident.status} />
       </button>

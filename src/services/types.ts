@@ -26,6 +26,12 @@ export interface Incident {
   updatedAt: string
   affectedServices: string[]
   updates: IncidentUpdate[]
+  // Optional, and absent means 'manual' — every incident in incidents.json
+  // predates this field, so treating a missing source as manual (rather
+  // than requiring every hand-written entry to be edited) keeps the file
+  // backward-compatible. Auto-drafted incidents (see 16-Next-Round
+  // Functionality.md) always set this explicitly.
+  source?: 'manual' | 'auto'
 }
 
 export interface StatusPage {

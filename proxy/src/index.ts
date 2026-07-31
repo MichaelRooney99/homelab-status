@@ -4,7 +4,7 @@ import dotenv from 'dotenv'
 import { readFile } from 'fs/promises'
 import path from 'path'
 import { startPoller } from './poller'
-import { getDayBucketedHistory, getRawSnapshots } from './db'
+import { getDayBucketedHistory, getRawSnapshots, getAllDraftedIncidents } from './db'
 
 dotenv.config()
 
@@ -102,16 +102,26 @@ app.get('/health', (_req, res) => {
 })
 
 // ── Incidents ──────────────────────────────────────────────────────
-// Reads the file fresh on every request rather than caching it in memory.
-// The file is tiny and requests are infrequent, so there's no real cost
-// to this — and it means an edit to incidents.json takes effect on the
-// very next request, whether that edit came from a direct SSH edit on
-// Dega or from a normal git pull via capstone_deploy.yml. No restart,
-// no rebuild, either way.
+// Reads the file fresh on every request rather than caching it in memory
+// — same reasoning as always, the file is tiny and requests are
+// infrequent. Now merges two genuinely different sources at read time:
+// incidents.json (hand-edited, git-tracked, read-only inside this
+// container) and drafted_incidents (poller-written, lives in the same
+// snapshots.db the history endpoints already use). See
+// 16-Next-Round Functionality.md for why these can't share one storage
+// location. Every manual entry gets source: 'manual' stamped on if it
+// doesn't already have one — every existing incidents.json entry
+// predates this field, and defaulting here means the file itself never
+// needed a one-time migration.
 app.get('/incidents', async (_req, res) => {
   try {
     const raw = await readFile(INCIDENTS_FILE, 'utf-8')
-    res.json(JSON.parse(raw))
+    const manual = (JSON.parse(raw) as Array<Record<string, unknown>>).map(incident => ({
+      source: 'manual',
+      ...incident,
+    }))
+    const auto = getAllDraftedIncidents()
+    res.json([...manual, ...auto])
   } catch (error) {
     res.status(500).json({ error: String(error) })
   }

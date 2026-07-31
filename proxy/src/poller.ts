@@ -1,4 +1,11 @@
-import { recordSnapshot, pruneOldSnapshots } from './db'
+import {
+  recordSnapshot,
+  pruneOldSnapshots,
+  getLastStatuses,
+  getActiveDraftedIncident,
+  createDraftedIncident,
+  resolveDraftedIncident,
+} from './db'
 
 // 15 minutes — frequent enough to catch a same-day partial outage for
 // the two categories that have no other history source at all (unlike
@@ -7,6 +14,40 @@ import { recordSnapshot, pruneOldSnapshots } from './db'
 // light enough that it's a non-issue against Proxmox/Zabbix for a
 // homelab of this size. See 14-Full-Category History.md.
 const POLL_INTERVAL_MS = 15 * 60 * 1000
+
+// 2 consecutive readings at the poller's own 15-minute cadence — roughly
+// 30 minutes of sustained status before drafting or auto-resolving an
+// incident. Chosen specifically to avoid drafting an incident for a
+// single blip (one bad reading that recovers by the next tick) while
+// still catching a genuinely sustained problem within half an hour.
+// See 16-Next-Round Functionality.md's own reasoning for this number.
+const THRESHOLD_READINGS = 2
+
+// Checks whether a service just crossed the auto-incident threshold in
+// either direction. Called after every recorded snapshot, for every
+// service this poller tracks — cheap at this scale (a handful of
+// services, one query for two rows each), and re-deriving from the
+// snapshots table on every call means this is correct even right after
+// a proxy restart, with no volatile in-memory streak counter to lose.
+function checkIncidentThreshold(serviceId: string, timestamp: number): void {
+  const recent = getLastStatuses(serviceId, THRESHOLD_READINGS)
+  if (recent.length < THRESHOLD_READINGS) return // not enough history yet to judge a streak
+
+  const allOutage = recent.every(status => status === 'outage')
+  const allOperational = recent.every(status => status === 'operational')
+
+  const active = getActiveDraftedIncident(serviceId)
+
+  if (allOutage && !active) {
+    createDraftedIncident(serviceId, timestamp)
+  } else if (allOperational && active) {
+    resolveDraftedIncident(active.id, timestamp)
+  }
+  // Mixed readings (one outage, one operational) fall through here on
+  // purpose — neither threshold is met, so an already-active incident
+  // stays open and a service that hasn't sustained outage long enough
+  // doesn't get one drafted yet.
+}
 
 interface ProxmoxNodeSummary {
   node: string
@@ -79,6 +120,7 @@ async function pollProxmox(port: string | number): Promise<void> {
 
     const json = await response.json() as ProxmoxNodesResponse
     const nodes = json.data
+    const now = Math.floor(Date.now() / 1000)
 
     // Deliberately not pre-filtering to online nodes before recording a
     // status — that was the exact bug fixed in the client adapter this
@@ -86,7 +128,9 @@ async function pollProxmox(port: string | number): Promise<void> {
     // not silently skipped.
     for (const node of nodes) {
       const status = node.status === 'online' ? 'operational' : 'outage'
-      recordSnapshot(`proxmox-${node.node}`, status, responseTimeMs)
+      const serviceId = `proxmox-${node.node}`
+      recordSnapshot(serviceId, status, responseTimeMs, now)
+      checkIncidentThreshold(serviceId, now)
     }
   } catch (error) {
     console.error('Proxmox poll failed:', error)
@@ -118,10 +162,14 @@ async function pollZabbix(port: string | number): Promise<void> {
     if (json.error) throw new Error(`Zabbix poll error: ${json.error.message}`)
 
     const hosts = json.result ?? []
+    const now = Math.floor(Date.now() / 1000)
 
     for (const host of hosts) {
       if (host.name === ZABBIX_SERVER_NAME) continue
-      recordSnapshot(`zabbix-${host.hostid}`, deriveZabbixStatus(host.interfaces), responseTimeMs)
+      const serviceId = `zabbix-${host.hostid}`
+      const status = deriveZabbixStatus(host.interfaces)
+      recordSnapshot(serviceId, status, responseTimeMs, now)
+      checkIncidentThreshold(serviceId, now)
     }
   } catch (error) {
     console.error('Zabbix poll failed:', error)
