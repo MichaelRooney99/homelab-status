@@ -19,7 +19,7 @@ function formatTimestamp(iso: string): string {
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className={`w-4 h-4 text-zinc-500 transition-transform duration-150 shrink-0 ${open ? 'rotate-180' : ''}`}
+      className={`w-4 h-4 text-capstone-muted transition-transform duration-150 shrink-0 ${open ? 'rotate-180' : ''}`}
       viewBox="0 0 20 20"
       fill="none"
       aria-hidden="true"
@@ -70,7 +70,7 @@ function IncidentCard({ incident, forceOpen }: { incident: Incident; forceOpen: 
   }, [forceOpen])
 
   return (
-    <div ref={cardRef} className="rounded-lg border border-zinc-800 bg-zinc-900 px-6 py-5">
+    <div ref={cardRef} className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6 py-5">
       <button
         type="button"
         onClick={() => setIsOpen(open => !open)}
@@ -80,19 +80,19 @@ function IncidentCard({ incident, forceOpen }: { incident: Incident; forceOpen: 
       >
         <span className="flex items-center gap-2">
           <ChevronIcon open={isOpen} />
-          <h3 className="text-sm font-medium text-zinc-100">{incident.title}</h3>
+          <h3 className="text-sm font-medium text-capstone-text">{incident.title}</h3>
         </span>
         <IncidentBadge status={incident.status} />
       </button>
 
       {isOpen && (
-        <ol id={panelId} className="mt-4 space-y-3 border-l border-zinc-800 pl-4">
+        <ol id={panelId} className="mt-4 space-y-3 border-l border-capstone-border pl-4">
           {incident.updates.map((update, index) => (
             <li key={index} className="text-xs">
-              <time className="text-zinc-500" dateTime={update.timestamp}>
+              <time className="text-capstone-muted" dateTime={update.timestamp}>
                 {formatTimestamp(update.timestamp)}
               </time>
-              <p className="text-zinc-300 mt-0.5">{update.message}</p>
+              <p className="text-capstone-text mt-0.5">{update.message}</p>
             </li>
           ))}
         </ol>
@@ -111,7 +111,7 @@ export default function IncidentList({ incidents, focusId = null }: IncidentList
 
   return (
     <section>
-      <h2 className="text-xs uppercase tracking-widest text-zinc-500 mb-3">
+      <h2 className="font-serif text-xs uppercase tracking-widest text-capstone-muted mb-3">
         Incident History
       </h2>
       <div className="space-y-4">

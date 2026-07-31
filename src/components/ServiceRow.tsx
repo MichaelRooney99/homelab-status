@@ -13,8 +13,8 @@ function MetadataDisplay({ metadata }: { metadata: Record<string, string> }) {
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
       {Object.entries(metadata).map(([key, value]) => (
-        <span key={key} className="text-xs text-zinc-500">
-          <span className="text-zinc-400 capitalize">
+        <span key={key} className="text-xs text-capstone-muted">
+          <span className="text-capstone-muted capitalize">
             {key.replace(/([A-Z])/g, ' $1').trim()}
           </span>
           {': '}
@@ -30,8 +30,8 @@ export default function ServiceRow({ service, days, uptimePercent, onSelect }: S
     <div className="flex items-start justify-between gap-4">
       <div className="flex flex-col">
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-zinc-100">{service.name}</span>
-          <span className="text-xs text-zinc-600 uppercase tracking-wide">
+          <span className="text-sm font-medium text-capstone-text">{service.name}</span>
+          <span className="text-xs text-capstone-muted uppercase tracking-wide">
             {service.category}
           </span>
         </div>
@@ -46,7 +46,7 @@ export default function ServiceRow({ service, days, uptimePercent, onSelect }: S
   )
 
   return (
-    <div className="py-4 border-b border-zinc-800 last:border-0">
+    <div className="py-4 border-b border-capstone-border last:border-0">
       {onSelect ? (
         // Click target scoped to the header only, not the whole row —
         // UptimeBars has its own focusable bars (tabIndex on each one,
@@ -57,7 +57,7 @@ export default function ServiceRow({ service, days, uptimePercent, onSelect }: S
         <button
           type="button"
           onClick={() => onSelect(service)}
-          className="w-full text-left hover:bg-zinc-900/50 transition-colors rounded-sm -mx-2 -my-1 px-2 py-1"
+          className="w-full text-left hover:bg-capstone-subtle/50 transition-colors rounded-sm -mx-2 -my-1 px-2 py-1"
           aria-label={`View details for ${service.name}`}
         >
           {header}

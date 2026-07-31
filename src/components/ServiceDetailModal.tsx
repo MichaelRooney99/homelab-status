@@ -15,7 +15,7 @@ const statusDotColor: Record<string, string> = {
   operational: 'bg-green-500',
   degraded: 'bg-yellow-500',
   outage: 'bg-red-500',
-  unknown: 'bg-zinc-500',
+  unknown: 'bg-capstone-muted',
 }
 
 function formatLogTimestamp(timestamp: number): string {
@@ -71,12 +71,12 @@ export default function ServiceDetailModal({ service, incidents, onClose }: Serv
         aria-labelledby="service-detail-title"
         tabIndex={-1}
         onClick={event => event.stopPropagation()}
-        className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900 p-6"
+        className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-lg border border-capstone-border bg-capstone-bg-raised p-6"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs uppercase tracking-wide text-zinc-500">{service.category}</p>
-            <h2 id="service-detail-title" className="text-lg font-semibold text-zinc-100">
+            <p className="text-xs uppercase tracking-wide text-capstone-muted">{service.category}</p>
+            <h2 id="service-detail-title" className="text-lg font-semibold text-capstone-text">
               {service.name}
             </h2>
           </div>
@@ -86,7 +86,7 @@ export default function ServiceDetailModal({ service, incidents, onClose }: Serv
               type="button"
               onClick={onClose}
               aria-label="Close detail view"
-              className="text-zinc-500 hover:text-zinc-100 transition-colors text-lg leading-none"
+              className="text-capstone-muted hover:text-capstone-text transition-colors text-lg leading-none"
             >
               ✕
             </button>
@@ -94,7 +94,7 @@ export default function ServiceDetailModal({ service, incidents, onClose }: Serv
         </div>
 
         {isLoading && (
-          <p className="text-sm text-zinc-500 mt-6">Loading last 24 hours…</p>
+          <p className="text-sm text-capstone-muted mt-6">Loading last 24 hours…</p>
         )}
 
         {isError && (
@@ -106,30 +106,30 @@ export default function ServiceDetailModal({ service, incidents, onClose }: Serv
         {data && (
           <>
             <div className="mt-6">
-              <h3 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
+              <h3 className="text-xs uppercase tracking-wide text-capstone-muted mb-2">
                 Response time — last 24h
               </h3>
               <MiniLineChart data={data.responseTime} />
             </div>
 
             <div className="mt-6">
-              <h3 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
+              <h3 className="text-xs uppercase tracking-wide text-capstone-muted mb-2">
                 Recent readings
               </h3>
               {recentLog.length === 0 ? (
-                <p className="text-xs text-zinc-500">No recent readings yet.</p>
+                <p className="text-xs text-capstone-muted">No recent readings yet.</p>
               ) : (
                 <ol className="space-y-1.5 max-h-40 overflow-y-auto pr-2">
                   {recentLog.map((entry, index) => (
                     <li key={index} className="flex items-center gap-2 text-xs">
                       <span
-                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDotColor[entry.status] ?? 'bg-zinc-500'}`}
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusDotColor[entry.status] ?? 'bg-capstone-muted'}`}
                         aria-hidden="true"
                       />
-                      <time className="text-zinc-500 w-32 shrink-0">
+                      <time className="text-capstone-muted w-32 shrink-0">
                         {formatLogTimestamp(entry.timestamp)}
                       </time>
-                      <span className="text-zinc-300 capitalize">{entry.status}</span>
+                      <span className="text-capstone-text capitalize">{entry.status}</span>
                     </li>
                   ))}
                 </ol>
@@ -140,12 +140,12 @@ export default function ServiceDetailModal({ service, incidents, onClose }: Serv
 
         {relatedIncidents.length > 0 && (
           <div className="mt-6">
-            <h3 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">
+            <h3 className="text-xs uppercase tracking-wide text-capstone-muted mb-2">
               Related incidents
             </h3>
             <ul className="space-y-1">
               {relatedIncidents.map(incident => (
-                <li key={incident.id} className="text-xs text-zinc-300">
+                <li key={incident.id} className="text-xs text-capstone-text">
                   {incident.title}
                 </li>
               ))}

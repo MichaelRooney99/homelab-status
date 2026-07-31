@@ -15,7 +15,7 @@ const PADDING = 8
 export default function MiniLineChart({ data }: MiniLineChartProps) {
   if (data.length === 0) {
     return (
-      <div className="h-24 flex items-center justify-center text-xs text-zinc-500">
+      <div className="h-24 flex items-center justify-center text-xs text-capstone-muted">
         No response-time data yet
       </div>
     )
@@ -54,15 +54,15 @@ export default function MiniLineChart({ data }: MiniLineChartProps) {
         <polyline
           points={points}
           fill="none"
-          stroke="#c8622a"
+          stroke="var(--theme-accent)"
           strokeWidth="2"
           strokeLinejoin="round"
           strokeLinecap="round"
         />
       </svg>
-      <div className="flex justify-between text-xs text-zinc-500 mt-1">
+      <div className="flex justify-between text-xs text-capstone-muted mt-1">
         <span>{minValue.toFixed(0)}ms</span>
-        <span className="text-zinc-300">Latest: {latest.value.toFixed(0)}ms</span>
+        <span className="text-capstone-text">Latest: {latest.value.toFixed(0)}ms</span>
         <span>{maxValue.toFixed(0)}ms</span>
       </div>
     </div>

@@ -9,8 +9,8 @@ const dayColor: Record<DayStatus, string> = {
   operational: 'bg-green-500',
   degraded: 'bg-yellow-500',
   outage: 'bg-red-500',
-  unknown: 'bg-zinc-600',
-  'no-data': 'bg-zinc-800',
+  unknown: 'bg-capstone-muted',
+  'no-data': 'bg-capstone-subtle',
 }
 
 const dayLabel: Record<DayStatus, string> = {
@@ -78,19 +78,19 @@ export default function UptimeBars({ days, uptimePercent }: UptimeBarsProps) {
               tabIndex={day.date ? 0 : -1}
             >
               <div
-                className={`h-8 rounded-sm ${dayColor[day.status]} opacity-90 hover:opacity-100 group-focus:opacity-100 group-focus:ring-2 group-focus:ring-zinc-400 transition-opacity outline-none`}
+                className={`h-8 rounded-sm ${dayColor[day.status]} opacity-90 hover:opacity-100 group-focus:opacity-100 group-focus:ring-2 group-focus:ring-capstone-accent transition-opacity outline-none`}
                 title={day.date ? `${formatDate(day.date)} — ${dayLabel[day.status]}` : undefined}
               />
               {day.date && (
                 <div className={`
                   absolute bottom-full mb-2 ${tooltipPosition}
-                  bg-zinc-800 border border-zinc-700 rounded px-2 py-1
-                  text-xs text-zinc-200 whitespace-nowrap
+                  bg-capstone-subtle border border-capstone-border rounded px-2 py-1
+                  text-xs text-capstone-text whitespace-nowrap
                   opacity-0 group-hover:opacity-100 group-focus:opacity-100
                   transition-opacity pointer-events-none z-10
                 `}>
                   <span className="font-medium">{formatDate(day.date)}</span>
-                  <span className="text-zinc-400 ml-1">— {dayLabel[day.status]}</span>
+                  <span className="text-capstone-muted ml-1">— {dayLabel[day.status]}</span>
                 </div>
               )}
             </div>
@@ -98,16 +98,16 @@ export default function UptimeBars({ days, uptimePercent }: UptimeBarsProps) {
         })}
       </div>
       <div className="flex justify-between items-center mt-1.5">
-        <span className="text-xs text-zinc-600">90 days ago</span>
+        <span className="text-xs text-capstone-muted">90 days ago</span>
         {uptimePercent !== undefined && (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-capstone-muted">
             <span className={uptimeColor(uptimePercent)}>
               {uptimePercent.toFixed(2)}%
             </span>
             {' '}uptime
           </span>
         )}
-        <span className="text-xs text-zinc-600">Today</span>
+        <span className="text-xs text-capstone-muted">Today</span>
       </div>
     </div>
   )

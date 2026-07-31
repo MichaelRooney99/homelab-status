@@ -58,9 +58,9 @@ export default function DaysSinceIncident({ incidents }: DaysSinceIncidentProps)
   }
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 px-6 py-4 flex items-baseline justify-center gap-2">
+    <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6 py-4 flex items-baseline justify-center gap-2">
       <span className={`text-2xl font-bold ${colorClass}`}>{value}</span>
-      <span className="text-xs text-zinc-500 uppercase tracking-widest">{label}</span>
+      <span className="text-xs text-capstone-muted uppercase tracking-widest">{label}</span>
     </div>
   )
 }

@@ -12,7 +12,7 @@ const barColor: Record<Status, string> = {
   operational: 'bg-green-500',
   degraded: 'bg-yellow-500',
   outage: 'bg-red-500',
-  unknown: 'bg-zinc-500',
+  unknown: 'bg-capstone-muted',
 }
 
 const headline: Record<Status, string> = {
@@ -37,16 +37,16 @@ export default function OverallHealth({
   outageCount,
 }: OverallHealthProps) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900 overflow-hidden">
+    <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised overflow-hidden">
       <div className={`h-1.5 w-full ${barColor[status]}`} aria-hidden="true" />
       <div className="px-6 py-5 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-4">
           <StatusBadge status={status} />
-          <span className="text-sm font-medium text-zinc-100">
+          <span className="font-serif font-normal text-sm text-capstone-text">
             {headline[status]}
           </span>
         </div>
-        <div className="flex items-center gap-6 text-xs text-zinc-500">
+        <div className="flex items-center gap-6 text-xs text-capstone-muted">
           <span>{serviceCount} services monitored</span>
           {outageCount > 0 && (
             <span className="text-red-400">{outageCount} outage{outageCount !== 1 ? 's' : ''}</span>

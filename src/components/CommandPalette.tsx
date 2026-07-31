@@ -150,7 +150,7 @@ export default function CommandPalette({
         aria-label="Command palette"
         onClick={event => event.stopPropagation()}
         onKeyDown={handleKeyDown}
-        className="w-full max-w-lg rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl overflow-hidden"
+        className="w-full max-w-lg rounded-lg border border-capstone-border bg-capstone-bg-raised shadow-xl overflow-hidden"
       >
         <input
           ref={inputRef}
@@ -163,11 +163,11 @@ export default function CommandPalette({
           aria-expanded="true"
           aria-controls="command-palette-results"
           aria-activedescendant={filtered[activeIndex]?.key}
-          className="w-full bg-transparent px-4 py-3 text-sm text-zinc-100 placeholder-zinc-500 border-b border-zinc-800 outline-none"
+          className="w-full bg-transparent px-4 py-3 text-sm text-capstone-text placeholder-capstone-muted border-b border-capstone-border outline-none"
         />
 
         {filtered.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-zinc-500 text-center">
+          <p className="px-4 py-6 text-sm text-capstone-muted text-center">
             Nothing matches "{query}".
           </p>
         ) : (
@@ -185,16 +185,16 @@ export default function CommandPalette({
                   onClick={() => runItem(item)}
                   onMouseEnter={() => setActiveIndex(index)}
                   className={`flex w-full items-center justify-between gap-4 px-4 py-2 text-left text-sm transition-colors ${
-                    index === activeIndex ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-300'
+                    index === activeIndex ? 'bg-capstone-subtle text-capstone-text' : 'text-capstone-text/80'
                   }`}
                 >
                   <span className="flex items-center gap-2 min-w-0">
-                    <span className="shrink-0 rounded border border-zinc-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-zinc-500">
+                    <span className="shrink-0 rounded border border-capstone-border px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-capstone-muted">
                       {TYPE_TAG[item.type]}
                     </span>
                     <span className="truncate">{item.label}</span>
                   </span>
-                  <span className="shrink-0 text-xs text-zinc-500 truncate max-w-[40%]">
+                  <span className="shrink-0 text-xs text-capstone-muted truncate max-w-[40%]">
                     {item.sublabel}
                   </span>
                 </button>
@@ -203,7 +203,7 @@ export default function CommandPalette({
           </ul>
         )}
 
-        <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-2 text-[11px] text-zinc-500">
+        <div className="flex items-center justify-between border-t border-capstone-border px-4 py-2 text-[11px] text-capstone-muted">
           <span>↑↓ navigate · Enter select · Esc close</span>
           <span>⌘K · Ctrl+K · /</span>
         </div>
