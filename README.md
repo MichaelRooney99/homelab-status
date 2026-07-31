@@ -162,7 +162,7 @@ Every route below is a plain `GET` returning JSON, reachable at `https://status.
 |Route|Returns|
 |---|---|
 |`/health`|`{ "status": "ok" }` — proxy liveness check|
-|`/incidents`|Array of `Incident` objects — id, title, status, timestamps, affected services, and a timeline of updates. See `types.ts` for the full shape.|
+|`/incidents`|Array of `Incident` objects — id, title, status, timestamps, affected services, a timeline of updates, and a `source` field (`"manual"` or `"auto"`, added 08-05-2026 — hand-written entries from `incidents.json` and auto-drafted ones from sustained outage detection are merged into one array here). See `types.ts` for the full shape.|
 |`/history/:serviceId`|90-day day-bucketed history for one service, `[{ "date": "2026-07-25", "status": "operational" }, ...]`. Service ids match what `/incidents`' `affectedServices` field and the live status page use — e.g. `proxmox-ankhh`, `ups-cyberpower`, `zabbix-10781`.|
 
 Example:
