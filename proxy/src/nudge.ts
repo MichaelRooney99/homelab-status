@@ -12,6 +12,17 @@ import type { Response } from 'express'
 // not an oversight.
 const NUDGE_CHECK_INTERVAL_MS = 20 * 1000
 
+// Cloudflare's edge proxy kills an idle connection that's gone quiet for
+// too long — well under two minutes, confirmed directly in testing
+// 08-06-2026 via a real curl connection that died with
+// "HTTP/2 stream ... INTERNAL_ERROR" after sitting silent for a while.
+// This has nothing to do with nginx or Express's own timeouts; it's
+// Cloudflare's tunnel specifically. Fix is a periodic no-op write well
+// under that threshold — EventSource ignores lines starting with ':' by
+// spec, so this never surfaces as a fake nudge on the client side, it's
+// purely there to keep the connection looking "active" to Cloudflare.
+const KEEPALIVE_INTERVAL_MS = 15 * 1000
+
 interface ZabbixInterface {
   available: string
   type: string
@@ -139,6 +150,12 @@ function broadcastNudge(): void {
   }
 }
 
+function sendKeepAlive(): void {
+  for (const client of clients) {
+    client.write(': keep-alive\n\n')
+  }
+}
+
 let lastSignature: string | null = null
 
 async function checkForChanges(port: string | number): Promise<void> {
@@ -177,4 +194,5 @@ async function checkForChanges(port: string | number): Promise<void> {
 
 export function startNudgeChecker(port: string | number): void {
   setInterval(() => checkForChanges(port), NUDGE_CHECK_INTERVAL_MS)
+  setInterval(sendKeepAlive, KEEPALIVE_INTERVAL_MS)
 }

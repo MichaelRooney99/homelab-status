@@ -175,11 +175,14 @@ app.get('/events', (req, res) => {
     'Cache-Control': 'no-cache',
     'Connection': 'keep-alive',
   })
-  // Flushes the headers and establishes the stream immediately, rather
-  // than leaving the client's EventSource waiting for the first real
-  // nudge (which might be minutes or hours away) before it even knows
-  // the connection succeeded.
-  res.write('\n')
+  // Flushes the headers and establishes the stream immediately with a
+  // valid SSE comment line, rather than leaving the client's
+  // EventSource waiting for the first real nudge (which might be
+  // minutes or hours away) before it even knows the connection
+  // succeeded. A bare newline isn't valid SSE framing — a comment line
+  // must start with ':' — this was silently wrong before, just never
+  // surfaced since EventSource tolerates malformed leading whitespace.
+  res.write(': connected\n\n')
 
   addNudgeClient(res)
 
