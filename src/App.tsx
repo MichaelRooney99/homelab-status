@@ -189,7 +189,7 @@ export default function App() {
 
         {Array.from(visibleGroups.entries()).map(([category, services]) => (
           <section key={category}>
-            <h2 className="font-serif text-xs uppercase tracking-widest text-capstone-muted mb-3">
+            <h2 className="font-serif text-sm uppercase tracking-widest text-capstone-accent mb-3">
               {category}
             </h2>
             <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6">

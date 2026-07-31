@@ -111,7 +111,7 @@ export default function IncidentList({ incidents, focusId = null }: IncidentList
 
   return (
     <section>
-      <h2 className="font-serif text-xs uppercase tracking-widest text-capstone-muted mb-3">
+      <h2 className="font-serif text-sm uppercase tracking-widest text-capstone-accent mb-3">
         Incident History
       </h2>
       <div className="space-y-4">
