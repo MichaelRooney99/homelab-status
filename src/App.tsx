@@ -3,6 +3,7 @@ import { useServiceStatus } from './hooks/useServiceStatus'
 import { useUptimeHistory } from './hooks/useUptimeHistory'
 import { useTabAlert } from './hooks/useTabAlert'
 import { useCommandPalette } from './hooks/useCommandPalette'
+import { useLiveNudge } from './hooks/useLiveNudge'
 import OverallHealth from './components/OverallHealth'
 import ServiceRow from './components/ServiceRow'
 import IncidentList from './components/IncidentList'
@@ -76,6 +77,7 @@ export default function App() {
   const { statusPage, isLoading, isError } = useServiceStatus()
   const { history } = useUptimeHistory(statusPage?.services ?? [])
   useTabAlert(statusPage)
+  useLiveNudge()
   const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null)
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [focusIncidentId, setFocusIncidentId] = useState<string | null>(null)

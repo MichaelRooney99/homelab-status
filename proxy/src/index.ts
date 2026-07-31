@@ -5,6 +5,7 @@ import { readFile } from 'fs/promises'
 import path from 'path'
 import { startPoller } from './poller'
 import { getDayBucketedHistory, getRawSnapshots, getAllDraftedIncidents } from './db'
+import { addNudgeClient, removeNudgeClient, startNudgeChecker } from './nudge'
 
 dotenv.config()
 
@@ -160,6 +161,33 @@ app.get('/history/:serviceId/recent', (req, res) => {
   }
 })
 
+// ── Live-update nudge channel (SSE) ──────────────────────────────────
+// Deliberately NOT the full-SSE version — the client still owns its own
+// 60s polling via useServiceStatus (see client/src/hooks/useLiveNudge.ts),
+// this route just tells already-connected clients "something changed,
+// refetch now" sooner than their next scheduled poll. No state is ever
+// pushed through this connection, only a bare signal — see
+// 17-Frontend Polish and Realtime.md for why the hybrid version was
+// chosen over relocating the whole aggregation facade server-side.
+app.get('/events', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  })
+  // Flushes the headers and establishes the stream immediately, rather
+  // than leaving the client's EventSource waiting for the first real
+  // nudge (which might be minutes or hours away) before it even knows
+  // the connection succeeded.
+  res.write('\n')
+
+  addNudgeClient(res)
+
+  req.on('close', () => {
+    removeNudgeClient(res)
+  })
+})
+
 // ── Prometheus proxy ──────────────────────────────────────────────
 app.use(
   '/prometheus',
@@ -216,4 +244,5 @@ app.post('/zabbix', express.json(), async (req, res) => {
 app.listen(PORT, () => {
   console.log(`Proxy running on port ${PORT}`)
   startPoller(PORT)
+  startNudgeChecker(PORT)
 })
