@@ -21,7 +21,13 @@ const HISTORY_DAYS = 90
 // means the same nominal day can show a different status run to run.
 // Anchoring every step to a fixed UTC midnight makes each day's sample
 // stable regardless of when the query fires.
-function utcMidnightSeconds(date: Date): number {
+//
+// Exported as a deliberate, narrow exception to this file's usual
+// export surface (see 04-Services Index) — this exact function is what
+// broke in the real 07-24-2026 day-boundary bug, so it's exactly the
+// kind of pure, high-bug-risk logic 18-Automated Test Coverage.md calls
+// out as worth testing directly rather than only through fetchUptimeHistory.
+export function utcMidnightSeconds(date: Date): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1000
 }
 
@@ -81,7 +87,11 @@ async function queryPrometheusRange(
 // 30-day retention doesn't reach that far back, or because of a real gap
 // in scraping — get 'no-data' rather than a guessed value. This is the
 // same "grey block, not a lie" behavior the placeholder version used.
-function buildUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
+//
+// Exported for testing — same reasoning as utcMidnightSeconds above,
+// this function's day-bucketing is the other half of the logic that
+// caused the real 07-24-2026 bug.
+export function buildUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
   const valueByDate = new Map<string, string>()
 
   for (const series of results) {
@@ -115,7 +125,9 @@ function buildUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
 // History needs the same priority logic, not just a single flag, or every
 // on-battery day would get flattened down to a plain outage instead of
 // showing as degraded.
-function buildUpsUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
+//
+// Exported for testing, same reasoning as the two functions above.
+export function buildUpsUptimeDays(results: PrometheusRangeResult[]): UptimeDay[] {
   const flagsByDate = new Map<string, Set<string>>()
 
   for (const series of results) {

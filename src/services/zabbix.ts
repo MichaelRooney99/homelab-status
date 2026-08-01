@@ -55,8 +55,17 @@ async function queryZabbix(
 
 // Find the agent interface (type "1") and read its available field.
 // "0" = unknown, "1" = available, "2" = unavailable
-
-function deriveAvailability(interfaces: ZabbixInterface[]): Status {
+//
+// Exported as a deliberate, narrow exception to this file's usual "only
+// the adapter itself" export surface (see 04-Services Index) — this
+// exact class of derivation logic is duplicated three times across this
+// codebase (here, proxy/src/poller.ts, proxy/src/nudge.ts) specifically
+// because it's small enough that shared tooling wasn't worth it, and
+// that kind of duplication is exactly what silently drifted in the real
+// 07-24-2026 nut_exporter/nut job-name bug. Testing this canonical copy
+// doesn't automatically protect the other two, but it's the cheapest
+// place to start — see 18-Automated Test Coverage.md.
+export function deriveAvailability(interfaces: ZabbixInterface[]): Status {
   const agentInterface = interfaces.find(i => i.type === '1')
   if (!agentInterface) return 'unknown'
 

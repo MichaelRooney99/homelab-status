@@ -4,6 +4,7 @@ import { useUptimeHistory } from './hooks/useUptimeHistory'
 import { useTabAlert } from './hooks/useTabAlert'
 import { useCommandPalette } from './hooks/useCommandPalette'
 import { useLiveNudge } from './hooks/useLiveNudge'
+import { calculateUptimePercent } from './lib/uptime'
 import OverallHealth from './components/OverallHealth'
 import ServiceRow from './components/ServiceRow'
 import IncidentList from './components/IncidentList'
@@ -58,19 +59,6 @@ function generatePlaceholderDays(currentStatus: Status): UptimeDay[] {
   }
 
   return days
-}
-
-// Percent of days WITH data that were operational — 'no-data' days are
-// excluded from the denominator rather than counted against the service,
-// since they mean "Prometheus retention doesn't reach that far," not
-// "this service was down." Returns undefined if every day is no-data
-// (e.g. brand new service, nothing to compute a percent from yet).
-function calculateUptimePercent(days: UptimeDay[]): number | undefined {
-  const withData = days.filter(d => d.status !== 'no-data')
-  if (withData.length === 0) return undefined
-
-  const operational = withData.filter(d => d.status === 'operational').length
-  return (operational / withData.length) * 100
 }
 
 export default function App() {
