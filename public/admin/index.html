@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Admin — Homelab Status</title>
+  <!--
+    Standalone page, not a React route. The status page's own App.tsx has
+    no router — adding one for exactly one admin page would be a real new
+    dependency for a single screen. This matches the portfolio site's own
+    established preference for plain HTML/JS over a framework wherever
+    one isn't earned. See 21-Manual Incident Authoring UI.md.
+
+    Auth: this page assumes Cloudflare Access is gating the /admin/*
+    path prefix at the edge. There is no login form here on purpose —
+    if this page loaded at all, Access already decided you're allowed to
+    see it. The fetch calls below carry no credentials of their own.
+  -->
+  <style>
+    :root {
+      --bg: #0e0d0b;
+      --bg-raised: #151410;
+      --border: #232220;
+      --text: #f0ede8;
+      --muted: #7a7670;
+      --accent: #c8622a;
+      --danger: #e05252;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2rem 1.5rem 4rem;
+    }
+    main { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); font-size: 0.8rem; margin-bottom: 2rem; }
+    section {
+      background: var(--bg-raised);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.5rem;
+    }
+    h2 { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 1rem; }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.75rem 0 0.25rem; }
+    label:first-of-type { margin-top: 0; }
+    input, textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 0.5rem 0.6rem;
+      font-family: inherit;
+      font-size: 0.9rem;
+    }
+    textarea { min-height: 4.5rem; resize: vertical; }
+    button {
+      margin-top: 1rem;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 0.55rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: default; }
+    button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    button.danger { background: var(--danger); }
+    .status-msg { font-size: 0.8rem; margin-top: 0.5rem; }
+    .status-msg.ok { color: #4caf7d; }
+    .status-msg.err { color: var(--danger); }
+    .incident {
+      border-top: 1px solid var(--border);
+      padding: 0.9rem 0;
+    }
+    .incident:first-child { border-top: none; padding-top: 0; }
+    .incident-title { font-weight: 500; font-size: 0.9rem; }
+    .incident-meta { font-size: 0.75rem; color: var(--muted); margin-top: 0.15rem; }
+    .incident-actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+    .incident-actions input {
+      flex: 1;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.05rem 0.35rem;
+      color: var(--muted);
+      margin-left: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Homelab Status — Admin</h1>
+    <p class="subtitle">Create and update incidents directly, no git push required. See <a href="/" style="color: var(--muted)">the live page</a>.</p>
+
+    <section>
+      <h2>New Incident</h2>
+      <label for="new-title">Title</label>
+      <input id="new-title" type="text" placeholder="e.g. Planned maintenance — Murloc reboot" />
+
+      <label for="new-services">Affected services (comma-separated service IDs)</label>
+      <input id="new-services" type="text" placeholder="e.g. proxmox-murloc, vaultwarden" />
+
+      <label for="new-message">Initial update</label>
+      <textarea id="new-message" placeholder="What's happening, in plain terms."></textarea>
+
+      <button id="create-btn" type="button">Create incident</button>
+      <div id="create-status" class="status-msg"></div>
+    </section>
+
+    <section>
+      <h2>Existing Incidents</h2>
+      <div id="incident-list">Loading…</div>
+    </section>
+  </main>
+
+  <script>
+    // No VITE_PROXY_URL equivalent here — this is a plain static page,
+    // not a Vite build, so it can't read import.meta.env. Relative paths
+    // work the same way the client's own production build does: this
+    // page and the /admin/incidents API are served from the same
+    // single origin behind nginx, so no origin needs to be hardcoded.
+    const API_BASE = '';
+
+    async function loadIncidents() {
+      const listEl = document.getElementById('incident-list');
+      try {
+        const res = await fetch(`${API_BASE}/incidents`);
+        if (!res.ok) throw new Error(`${res.status}`);
+        const incidents = await res.json();
+
+        if (incidents.length === 0) {
+          listEl.innerHTML = '<p class="subtitle">No incidents yet.</p>';
+          return;
+        }
+
+        // Most recent first — same ordering the public client.ts adapter
+        // imposes, so this list reads the same way the live page does.
+        incidents.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        listEl.innerHTML = incidents.map(incident => `
+          <div class="incident" data-id="${escapeAttr(incident.id)}">
+            <div class="incident-title">
+              ${escapeHtml(incident.title)}
+              <span class="tag">${escapeHtml(incident.status)}</span>
+              <span class="tag">${escapeHtml(incident.source ?? 'manual')}</span>
+            </div>
+            <div class="incident-meta">${escapeHtml((incident.affectedServices || []).join(', '))}</div>
+            <div class="incident-actions">
+              <input type="text" placeholder="Add an update…" class="update-input" />
+              <button type="button" class="secondary update-btn">Update</button>
+              ${incident.status !== 'resolved'
+                ? '<button type="button" class="danger resolve-btn">Resolve</button>'
+                : ''}
+            </div>
+          </div>
+        `).join('');
+
+        listEl.querySelectorAll('.update-btn').forEach(btn => {
+          btn.addEventListener('click', () => handleUpdate(btn, false));
+        });
+        listEl.querySelectorAll('.resolve-btn').forEach(btn => {
+          btn.addEventListener('click', () => handleUpdate(btn, true));
+        });
+      } catch (err) {
+        listEl.innerHTML = `<p class="status-msg err">Couldn't load incidents: ${escapeHtml(String(err))}</p>`;
+      }
+    }
+
+    async function handleUpdate(button, resolving) {
+      const incidentEl = button.closest('.incident');
+      const id = incidentEl.dataset.id;
+      const input = incidentEl.querySelector('.update-input');
+      const message = resolving
+        ? (input.value.trim() || 'Marked resolved.')
+        : input.value.trim();
+
+      if (!resolving && !message) {
+        input.focus();
+        return;
+      }
+
+      button.disabled = true;
+      try {
+        const body = resolving ? { message, status: 'resolved' } : { message };
+        const res = await fetch(`${API_BASE}/admin/incidents/${encodeURIComponent(id)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`${res.status}`);
+        input.value = '';
+        loadIncidents();
+      } catch (err) {
+        alert(`Update failed: ${err}`);
+        button.disabled = false;
+      }
+    }
+
+    document.getElementById('create-btn').addEventListener('click', async () => {
+      const titleEl = document.getElementById('new-title');
+      const servicesEl = document.getElementById('new-services');
+      const messageEl = document.getElementById('new-message');
+      const statusEl = document.getElementById('create-status');
+      const btn = document.getElementById('create-btn');
+
+      const title = titleEl.value.trim();
+      const affectedServices = servicesEl.value.split(',').map(s => s.trim()).filter(Boolean);
+      const message = messageEl.value.trim();
+
+      if (!title || affectedServices.length === 0 || !message) {
+        statusEl.textContent = 'Title, at least one affected service, and an initial message are all required.';
+        statusEl.className = 'status-msg err';
+        return;
+      }
+
+      btn.disabled = true;
+      statusEl.textContent = '';
+      try {
+        const res = await fetch(`${API_BASE}/admin/incidents`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, affectedServices, message }),
+        });
+        if (!res.ok) throw new Error(`${res.status}`);
+
+        statusEl.textContent = 'Incident created.';
+        statusEl.className = 'status-msg ok';
+        titleEl.value = '';
+        servicesEl.value = '';
+        messageEl.value = '';
+        loadIncidents();
+      } catch (err) {
+        statusEl.textContent = `Failed: ${err}`;
+        statusEl.className = 'status-msg err';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str ?? '';
+      return div.innerHTML;
+    }
+    function escapeAttr(str) {
+      return escapeHtml(str).replace(/"/g, '&quot;');
+    }
+
+    loadIncidents();
+  </script>
+</body>
+</html>
