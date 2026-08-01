@@ -77,19 +77,25 @@ homelab-status/
 │   │   │   ├── history.ts     ← 90-day uptime history — Prometheus for Nodes/Power, proxy snapshot poller for Proxmox API/Zabbix
 │   │   │   └── index.ts       ← facade — Promise.allSettled across service adapters, incidents fetched separately
 │   │   ├── hooks/
-│   │   │   ├── useServiceStatus.ts    ← live status, 60s poll
+│   │   │   ├── useServiceStatus.ts    ← live status, 60s poll — now supplemented by a nudge listener (see useLiveNudge.ts)
 │   │   │   ├── useUptimeHistory.ts    ← history, hourly poll, takes the live service list as an argument
-│   │   │   └── useTabAlert.ts         ← reflects alert state in the tab title and favicon
+│   │   │   ├── useTabAlert.ts         ← reflects alert state in the tab title and favicon
+│   │   │   ├── useCommandPalette.ts   ← Cmd/Ctrl+K and "/" trigger, guarded against firing while typing
+│   │   │   └── useLiveNudge.ts        ← added 08-06-2026 — listens on /events, triggers an early refetch on top of (not instead of) the 60s poll
 │   │   ├── components/
 │   │   │   ├── StatusBadge.tsx
 │   │   │   ├── ServiceRow.tsx
 │   │   │   ├── OverallHealth.tsx
 │   │   │   ├── UptimeBars.tsx
 │   │   │   ├── IncidentBadge.tsx
-│   │   │   ├── IncidentList.tsx        ← per-card collapsible incident timeline
+│   │   │   ├── IncidentList.tsx        ← per-card collapsible incident timeline, small "Auto" tag for drafted incidents
 │   │   │   ├── DaysSinceIncident.tsx   ← days-since-last-incident counter
 │   │   │   ├── SkeletonHealth.tsx      ← loading-state placeholder matching OverallHealth
-│   │   │   └── SkeletonServiceRow.tsx  ← loading-state placeholder matching ServiceRow
+│   │   │   ├── SkeletonServiceRow.tsx  ← loading-state placeholder matching ServiceRow
+│   │   │   ├── ServiceDetailModal.tsx  ← per-service 24h response-time chart + recent readings
+│   │   │   ├── MiniLineChart.tsx       ← hand-rolled SVG line chart, no charting library
+│   │   │   ├── ThemeToggle.tsx         ← light/dark toggle
+│   │   │   └── CommandPalette.tsx      ← Cmd/Ctrl+K search across services, categories, incidents
 │   │   ├── App.tsx
 │   │   └── main.tsx
 │   ├── Dockerfile
@@ -97,9 +103,10 @@ homelab-status/
 │   └── .env
 ├── proxy/
 │   ├── src/
-│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, plus the Proxmox/Zabbix proxy passthroughs
-│   │   ├── db.ts        ← node:sqlite storage for the snapshot poller
-│   │   └── poller.ts    ← independent 15-minute background poll for Proxmox API/Zabbix history
+│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, plus the Proxmox/Zabbix/Prometheus proxy passthroughs
+│   │   ├── db.ts        ← node:sqlite storage — the snapshot poller's history, plus auto-drafted incidents (added 08-05-2026)
+│   │   ├── poller.ts    ← independent 15-minute background poll for Proxmox API/Zabbix history, and the auto-drafted-incident threshold check
+│   │   └── nudge.ts     ← added 08-06-2026 — a separate 20-second loop broadcasting a bare SSE signal when any service's status changes
 │   ├── incidents.json   ← hand-edited, git-tracked incident data, bind-mounted read-only into the container
 │   ├── Dockerfile
 │   └── .env
@@ -164,6 +171,7 @@ Every route below is a plain `GET` returning JSON, reachable at `https://status.
 |`/health`|`{ "status": "ok" }` — proxy liveness check|
 |`/incidents`|Array of `Incident` objects — id, title, status, timestamps, affected services, a timeline of updates, and a `source` field (`"manual"` or `"auto"`, added 08-05-2026 — hand-written entries from `incidents.json` and auto-drafted ones from sustained outage detection are merged into one array here). See `types.ts` for the full shape.|
 |`/history/:serviceId`|90-day day-bucketed history for one service, `[{ "date": "2026-07-25", "status": "operational" }, ...]`. Service ids match what `/incidents`' `affectedServices` field and the live status page use — e.g. `proxmox-ankhh`, `ups-cyberpower`, `zabbix-10781`.|
+|`/events`|Server-Sent Events stream, added 08-06-2026. Broadcasts a bare `event: nudge` message whenever any monitored service's status actually changes — no data payload, just a signal telling an already-connected client to refetch `/incidents`/live status sooner than its next scheduled poll. Sends a `: keep-alive` comment line every 15 seconds to survive Cloudflare's edge idle-connection timeout; `EventSource` clients ignore comment lines by spec.|
 
 Example:
 
