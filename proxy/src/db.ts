@@ -51,6 +51,32 @@ db.exec(`
   )
 `)
 
+// 21-Manual Incident Authoring UI (08-2026) needed three more columns:
+// a real `source` flag instead of assuming every row is 'auto', a real
+// `title` since manual incidents can't use the auto-only "Sustained
+// outage detected: <service_id>" template, and `affected_services` as a
+// JSON array since a manual incident isn't limited to one service the
+// way the threshold-drafted ones are. Each guarded the same way as
+// response_time_ms above — SQLite has no "ADD COLUMN IF NOT EXISTS."
+// DEFAULT 'auto' on the source column means every row that already
+// existed before this migration is correctly backfilled as auto-drafted
+// without a separate UPDATE statement.
+try {
+  db.exec(`ALTER TABLE drafted_incidents ADD COLUMN source TEXT NOT NULL DEFAULT 'auto'`)
+} catch {
+  // Already migrated.
+}
+try {
+  db.exec(`ALTER TABLE drafted_incidents ADD COLUMN title TEXT`)
+} catch {
+  // Already migrated.
+}
+try {
+  db.exec(`ALTER TABLE drafted_incidents ADD COLUMN affected_services TEXT`)
+} catch {
+  // Already migrated.
+}
+
 const RETENTION_DAYS = 90
 const HISTORY_DAYS = 90
 
@@ -191,17 +217,29 @@ interface DraftedIncidentRow {
   created_at: number
   updated_at: number
   updates: string
+  source: 'auto' | 'manual'
+  title: string | null
+  affected_services: string | null
 }
 
-// At most one *active* (non-resolved) drafted incident per service at a
-// time — a second sustained-outage streak on the same service while one
-// is already open should extend the existing incident, not spawn a
-// duplicate. Resolved drafted incidents for the same service are left
-// alone; a new outage after resolution correctly starts a new incident.
+// At most one *active* (non-resolved) auto-drafted incident per service
+// at a time — a second sustained-outage streak on the same service
+// while one is already open should extend the existing incident, not
+// spawn a duplicate. Resolved drafted incidents for the same service
+// are left alone; a new outage after resolution correctly starts a new
+// incident.
+//
+// Filtered to source = 'auto' explicitly (added alongside 21-Manual
+// Incident Authoring UI) — without this, an admin-authored manual
+// incident that happens to reference the same service_id would look
+// like an already-active incident to the threshold checker, silently
+// suppressing a real auto-draft that should have fired. Manual
+// incidents and the auto-threshold system need to stay invisible to
+// each other.
 export function getActiveDraftedIncident(serviceId: string): DraftedIncidentRow | undefined {
   return db
     .prepare(
-      `SELECT * FROM drafted_incidents WHERE service_id = ? AND status != 'resolved' LIMIT 1`
+      `SELECT * FROM drafted_incidents WHERE service_id = ? AND source = 'auto' AND status != 'resolved' LIMIT 1`
     )
     .get(serviceId) as DraftedIncidentRow | undefined
 }
@@ -238,13 +276,96 @@ export function resolveDraftedIncident(id: string, timestamp: number): void {
   ).run(timestamp, JSON.stringify(updates), id)
 }
 
+// ── Manual incidents (21-Manual Incident Authoring UI) ────────────────
+// These three functions are the write path the /admin/incidents routes
+// call. Deliberately separate from createDraftedIncident/
+// resolveDraftedIncident above rather than generalizing those — the
+// auto-threshold functions have hardcoded "Auto-detected"/"Auto-resolved"
+// message text that would be actively misleading attributed to
+// something a person typed in. Same table, same underlying storage,
+// different write paths for a real reason.
+
+// service_id is stored as the first affected service purely to satisfy
+// the column's NOT NULL constraint and existing index usage — it has no
+// real meaning for a manual incident the way it does for an auto-drafted
+// one (getActiveDraftedIncident's dedup logic is explicitly scoped to
+// source = 'auto', so this never interacts with the threshold system).
+export function createManualIncident(
+  title: string,
+  affectedServices: string[],
+  message: string,
+  timestamp: number = Math.floor(Date.now() / 1000)
+): string {
+  const id = `manual-${timestamp}-${Math.random().toString(36).slice(2, 8)}`
+  const primaryServiceId = affectedServices[0] ?? 'unspecified'
+  const updates = JSON.stringify([
+    { timestamp: new Date(timestamp * 1000).toISOString(), message },
+  ])
+
+  db.prepare(
+    `INSERT INTO drafted_incidents
+       (id, service_id, status, created_at, updated_at, updates, source, title, affected_services)
+     VALUES (?, ?, 'investigating', ?, ?, ?, 'manual', ?, ?)`
+  ).run(id, primaryServiceId, timestamp, timestamp, updates, title, JSON.stringify(affectedServices))
+
+  return id
+}
+
+// Appends a timeline entry without necessarily changing status — the
+// admin UI's "post an update" action, distinct from "mark resolved."
+export function appendIncidentUpdate(id: string, message: string, timestamp: number): boolean {
+  const row = db.prepare('SELECT updates FROM drafted_incidents WHERE id = ?').get(id) as
+    | { updates: string }
+    | undefined
+  if (!row) return false
+
+  const updates = JSON.parse(row.updates) as Array<{ timestamp: string; message: string }>
+  updates.push({ timestamp: new Date(timestamp * 1000).toISOString(), message })
+
+  db.prepare('UPDATE drafted_incidents SET updated_at = ?, updates = ? WHERE id = ?').run(
+    timestamp,
+    JSON.stringify(updates),
+    id
+  )
+  return true
+}
+
+// Changes status (most commonly to 'resolved') with a required message
+// explaining the change — every status transition in this app's history
+// so far has come with an explanation (an auto-detected reason, a
+// hand-written incident update), and a manual status change with no
+// accompanying text would be the first exception to that pattern.
+export function updateIncidentStatus(
+  id: string,
+  status: string,
+  message: string,
+  timestamp: number
+): boolean {
+  const row = db.prepare('SELECT updates FROM drafted_incidents WHERE id = ?').get(id) as
+    | { updates: string }
+    | undefined
+  if (!row) return false
+
+  const updates = JSON.parse(row.updates) as Array<{ timestamp: string; message: string }>
+  updates.push({ timestamp: new Date(timestamp * 1000).toISOString(), message })
+
+  db.prepare('UPDATE drafted_incidents SET status = ?, updated_at = ?, updates = ? WHERE id = ?').run(
+    status,
+    timestamp,
+    JSON.stringify(updates),
+    id
+  )
+  return true
+}
+
 // Shaped to match the client's Incident type directly (see types.ts) so
 // index.ts can merge this array with incidents.json's contents and hand
 // the combined result straight to the client with no further mapping.
-// 'identified'/'monitoring' are never produced here — a drafted
+// 'identified'/'monitoring' are never produced here — an auto-drafted
 // incident only ever has two real states, active or resolved, and
 // 'investigating' is the honest label for "detected automatically,
-// nobody has looked at it yet."
+// nobody has looked at it yet." Manual incidents can use any status the
+// admin sets via updateIncidentStatus.
 export function getAllDraftedIncidents(): Array<{
   id: string
   title: string
@@ -253,18 +374,22 @@ export function getAllDraftedIncidents(): Array<{
   updatedAt: string
   affectedServices: string[]
   updates: Array<{ timestamp: string; message: string }>
-  source: 'auto'
+  source: 'auto' | 'manual'
 }> {
   const rows = db.prepare('SELECT * FROM drafted_incidents').all() as unknown as DraftedIncidentRow[]
 
   return rows.map(row => ({
     id: row.id,
-    title: `Sustained outage detected: ${row.service_id}`,
+    // title/affected_services are only NULL for auto-drafted rows written
+    // before this migration added those columns — fall back to the old
+    // computed template so pre-existing incidents keep displaying
+    // correctly rather than showing a blank title.
+    title: row.title ?? `Sustained outage detected: ${row.service_id}`,
     status: row.status,
     createdAt: new Date(row.created_at * 1000).toISOString(),
     updatedAt: new Date(row.updated_at * 1000).toISOString(),
-    affectedServices: [row.service_id],
+    affectedServices: row.affected_services ? JSON.parse(row.affected_services) : [row.service_id],
     updates: JSON.parse(row.updates),
-    source: 'auto' as const,
+    source: row.source,
   }))
 }

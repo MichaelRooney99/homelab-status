@@ -4,7 +4,14 @@ import dotenv from 'dotenv'
 import { readFile } from 'fs/promises'
 import path from 'path'
 import { startPoller } from './poller'
-import { getDayBucketedHistory, getRawSnapshots, getAllDraftedIncidents } from './db'
+import {
+  getDayBucketedHistory,
+  getRawSnapshots,
+  getAllDraftedIncidents,
+  createManualIncident,
+  appendIncidentUpdate,
+  updateIncidentStatus,
+} from './db'
 import { addNudgeClient, removeNudgeClient, startNudgeChecker } from './nudge'
 
 dotenv.config()
@@ -105,24 +112,87 @@ app.get('/health', (_req, res) => {
 // ── Incidents ──────────────────────────────────────────────────────
 // Reads the file fresh on every request rather than caching it in memory
 // — same reasoning as always, the file is tiny and requests are
-// infrequent. Now merges two genuinely different sources at read time:
-// incidents.json (hand-edited, git-tracked, read-only inside this
-// container) and drafted_incidents (poller-written, lives in the same
-// snapshots.db the history endpoints already use). See
-// 16-Next-Round Functionality.md for why these can't share one storage
-// location. Every manual entry gets source: 'manual' stamped on if it
-// doesn't already have one — every existing incidents.json entry
-// predates this field, and defaulting here means the file itself never
-// needed a one-time migration.
+// infrequent. Merges two genuinely different storage locations at read
+// time: incidents.json (hand-edited, git-tracked, read-only inside this
+// container — the original historical seed) and drafted_incidents
+// (DB-backed, writable, lives in the same snapshots.db the history
+// endpoints already use). Since 21-Manual Incident Authoring UI,
+// drafted_incidents itself now holds two kinds of rows — auto-detected
+// and admin-authored — both already carry a real `source` column, so no
+// extra mapping is needed here beyond the file's own default. Every
+// incidents.json entry gets source: 'manual' stamped on if it doesn't
+// already have one, since every existing entry predates that field and
+// defaulting here means the file itself never needed a one-time
+// migration. See 16-Next-Round Functionality.md and 21-Manual Incident
+// Authoring UI.md.
 app.get('/incidents', async (_req, res) => {
   try {
     const raw = await readFile(INCIDENTS_FILE, 'utf-8')
-    const manual = (JSON.parse(raw) as Array<Record<string, unknown>>).map(incident => ({
+    const fromFile = (JSON.parse(raw) as Array<Record<string, unknown>>).map(incident => ({
       source: 'manual',
       ...incident,
     }))
-    const auto = getAllDraftedIncidents()
-    res.json([...manual, ...auto])
+    const fromDb = getAllDraftedIncidents()
+    res.json([...fromFile, ...fromDb])
+  } catch (error) {
+    res.status(500).json({ error: String(error) })
+  }
+})
+
+// ── Admin: manual incident authoring (21-Manual Incident Authoring UI) ──
+// Everything under /admin is expected to sit behind a Cloudflare Access
+// policy scoped to this exact path prefix — Access validates the
+// visitor's identity at Cloudflare's edge before the request ever
+// reaches this container, the same way the rest of this deployment has
+// no inbound ports open at all. IMPORTANT, honestly stated: as of this
+// Phase 1 build, this code performs zero independent verification of
+// its own — there is no server-side check that a request actually came
+// through an authenticated Access session. That defense-in-depth layer
+// (validating the Cf-Access-Jwt-Assertion header directly) is explicitly
+// deferred to Phase 2, sequenced after 22-Security Hardening's
+// threat-model pass, not an oversight here. Do not point this route at
+// the public internet without the Access policy actually configured and
+// verified first.
+app.post('/admin/incidents', express.json(), (req, res) => {
+  const { title, affectedServices, message } = req.body as {
+    title?: string
+    affectedServices?: string[]
+    message?: string
+  }
+
+  if (!title || !Array.isArray(affectedServices) || affectedServices.length === 0 || !message) {
+    res.status(400).json({ error: 'title, affectedServices (non-empty array), and message are required' })
+    return
+  }
+
+  try {
+    const id = createManualIncident(title, affectedServices, message)
+    res.status(201).json({ id })
+  } catch (error) {
+    res.status(500).json({ error: String(error) })
+  }
+})
+
+app.patch('/admin/incidents/:id', express.json(), (req, res) => {
+  const { message, status } = req.body as { message?: string; status?: string }
+  const timestamp = Math.floor(Date.now() / 1000)
+
+  if (!message) {
+    res.status(400).json({ error: 'message is required — every status change and update needs an explanation, see db.ts' })
+    return
+  }
+
+  try {
+    const updated = status
+      ? updateIncidentStatus(req.params.id, status, message, timestamp)
+      : appendIncidentUpdate(req.params.id, message, timestamp)
+
+    if (!updated) {
+      res.status(404).json({ error: 'No incident found with that id' })
+      return
+    }
+
+    res.json({ ok: true })
   } catch (error) {
     res.status(500).json({ error: String(error) })
   }
