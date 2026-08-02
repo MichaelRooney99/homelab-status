@@ -67,6 +67,9 @@ Full write-up of every architectural decision (why single-origin, why two-stage 
 ```
 homelab-status/
 ├── client/
+│   ├── public/
+│   │   └── admin/
+│   │       └── index.html      ← standalone admin UI (added 08-08-2026) — plain HTML/JS, no router added to the React app for one page, gated by Cloudflare Access on /admin/*, not application code
 │   ├── src/
 │   │   ├── services/       ← one adapter per data source, normalized to ServiceStatus[]
 │   │   │   ├── types.ts
@@ -76,6 +79,8 @@ homelab-status/
 │   │   │   ├── incidents.ts   ← incident history adapter
 │   │   │   ├── history.ts     ← 90-day uptime history — Prometheus for Nodes/Power, proxy snapshot poller for Proxmox API/Zabbix
 │   │   │   └── index.ts       ← facade — Promise.allSettled across service adapters, incidents fetched separately
+│   │   ├── lib/
+│   │   │   └── uptime.ts      ← calculateUptimePercent — pure math with no service/component home, kept out of App.tsx to satisfy Vite's Fast Refresh rules
 │   │   ├── hooks/
 │   │   │   ├── useServiceStatus.ts    ← live status, 60s poll — now supplemented by a nudge listener (see useLiveNudge.ts)
 │   │   │   ├── useUptimeHistory.ts    ← history, hourly poll, takes the live service list as an argument
@@ -99,15 +104,15 @@ homelab-status/
 │   │   ├── App.tsx
 │   │   └── main.tsx
 │   ├── Dockerfile
-│   ├── nginx.conf
+│   ├── nginx.conf   ← two real routing bugs found here 08-08-2026: a too-broad /admin/ forward rule swallowing the page request, and a missing $uri/ step in try_files that had likely been latent since the first deploy — see the 08-08-2026 changelog
 │   └── .env
 ├── proxy/
 │   ├── src/
-│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, plus the Proxmox/Zabbix/Prometheus proxy passthroughs
-│   │   ├── db.ts        ← node:sqlite storage — the snapshot poller's history, plus auto-drafted incidents (added 08-05-2026)
+│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, POST+PATCH /admin/incidents (added 08-08-2026, Cloudflare Access-gated), plus the Proxmox/Zabbix/Prometheus proxy passthroughs
+│   │   ├── db.ts        ← node:sqlite storage — snapshot poller history, auto-drafted incidents (08-05-2026), and manual incidents (08-08-2026, same table, source/title/affected_services columns distinguish the two)
 │   │   ├── poller.ts    ← independent 15-minute background poll for Proxmox API/Zabbix history, and the auto-drafted-incident threshold check
 │   │   └── nudge.ts     ← added 08-06-2026 — a separate 20-second loop broadcasting a bare SSE signal when any service's status changes
-│   ├── incidents.json   ← hand-edited, git-tracked incident data, bind-mounted read-only into the container
+│   ├── incidents.json   ← hand-edited, git-tracked incident data, bind-mounted read-only into the container — the original historical seed; every new incident since 08-05-2026, auto or manual, lives in the database instead
 │   ├── Dockerfile
 │   └── .env
 ├── docker-compose.yml   ← includes a named volume (snapshots-data) so poller history survives redeploys
@@ -181,6 +186,8 @@ curl https://status.michaelrooney.dev/history/proxmox-ankhh
 ```
 
 There's no single combined "everything at once" endpoint yet — an external consumer currently needs to hit these separately, the same way the client itself does. That's a deliberate scope call, not an oversight: see `16-Next-Round Functionality.md` (in the project's Obsidian vault, if you have access to it) for the reasoning on why a combined feed wasn't built speculatively.
+
+**Not public:** `POST /admin/incidents` and `PATCH /admin/incidents/:id` (added 08-08-2026) let an authenticated admin create and update incidents directly, without a git push. Gated by Cloudflare Access on the `/admin/*` path — unauthenticated requests never reach these routes at all. See `21-Manual Incident Authoring UI.md` for the full design.
 
 ---
 
@@ -272,8 +279,18 @@ Prometheus is itself a scraper — it's the reason Proxmox Nodes and Power get r
 
 ### Cloudflare Zero Trust / Tunnels
 
+The tunnel itself has carried the whole project since the first deploy — no inbound ports opened anywhere on the homelab network, `cloudflared` holding an outbound-only connection out to Cloudflare instead. `21-Manual Incident Authoring UI` (08-08-2026) added the first real access-control layer on top of that: **Cloudflare Access**, gated to the `/admin/*` path specifically, protecting the new admin routes with zero application-level auth code — no password, no session store, nothing in `index.ts` checking who's asking. Access validates identity at Cloudflare's own edge, before a request ever reaches this project's containers.
+
+One real, sharp thing worth knowing before relying on this pattern elsewhere: **publishing a tunnel route does not protect it by default.** A published application with no Access application configured in front of it is reachable by anyone who knows the URL. The Access application had to be created as a genuinely separate step — see the journal entry linked below for the full walkthrough of setting this up for real, including two nginx bugs it surfaced along the way.
+
 - [Cloudflare Zero Trust docs](https://developers.cloudflare.com/cloudflare-one/)
 - [Tunnels — Get started](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/)
+- [Published applications](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/routing-to-tunnel/) — how a tunnel route actually gets exposed, and the explicit note that Access is a separate, optional layer on top
+- [Publish a self-hosted application to the Internet](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/) — the actual Access-application creation flow this project's `/admin` setup followed
+- [Application paths](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/) — scoping a policy to part of a domain (`/admin/*`) rather than the whole thing, so the public status page stayed untouched
+- [Common Access policies](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/common-policies/) — the email-based Allow policy this project's single-admin setup uses is close to the simplest real-world case documented here
+
+Full write-up of the actual setup — including the "publishing isn't protecting" gotcha and both nginx bugs it exposed — in the journal: [Publishing Isn't the Same as Protecting](https://michaelrooney.dev/journal/08-08-2026.html).
 
 ---
 
