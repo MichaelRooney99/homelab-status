@@ -135,7 +135,13 @@ app.get('/incidents', async (_req, res) => {
     const fromDb = getAllDraftedIncidents()
     res.json([...fromFile, ...fromDb])
   } catch (error) {
-    res.status(500).json({ error: String(error) })
+    // 22-Security Hardening — every route below used to send String(error)
+    // straight back to the client. Not a credential leak on its own, but
+    // unnecessary internal detail (stack traces, file paths, upstream
+    // error text) handed to any public caller. Logged server-side where
+    // it's actually useful; the client only gets a generic message.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
   }
 })
 
@@ -169,7 +175,9 @@ app.post('/admin/incidents', express.json(), (req, res) => {
     const id = createManualIncident(title, affectedServices, message)
     res.status(201).json({ id })
   } catch (error) {
-    res.status(500).json({ error: String(error) })
+    // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
   }
 })
 
@@ -194,7 +202,9 @@ app.patch('/admin/incidents/:id', express.json(), (req, res) => {
 
     res.json({ ok: true })
   } catch (error) {
-    res.status(500).json({ error: String(error) })
+    // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
   }
 })
 
@@ -210,7 +220,9 @@ app.get('/history/:serviceId', (req, res) => {
     const days = getDayBucketedHistory(req.params.serviceId)
     res.json(days)
   } catch (error) {
-    res.status(500).json({ error: String(error) })
+    // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
   }
 })
 
@@ -227,7 +239,9 @@ app.get('/history/:serviceId/recent', (req, res) => {
     const rows = getRawSnapshots(req.params.serviceId)
     res.json(rows)
   } catch (error) {
-    res.status(500).json({ error: String(error) })
+    // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
   }
 })
 
@@ -262,8 +276,37 @@ app.get('/events', (req, res) => {
 })
 
 // ── Prometheus proxy ──────────────────────────────────────────────
+// Restricted to the exact two endpoints prometheus.ts ever calls
+// (/api/v1/query, /api/v1/query_range) — added 22-Security Hardening.
+// Before this, /prometheus/* forwarded ANY path to the real Prometheus
+// instance with no restriction at all: a genuinely serious gap, not a
+// theoretical one, since this app's actual usage only ever needs two
+// read endpoints but nothing enforced that. Blocks admin/config/reload
+// endpoints entirely and any other Prometheus API surface this app has
+// no legitimate reason to expose to the public internet.
+//
+// Deliberately NOT validating the *content* of the `query` parameter
+// itself yet — an allowed path can still carry an arbitrary PromQL
+// query, which could pull metrics this app never displays or run an
+// expensive query as a denial-of-service vector. Path-level restriction
+// closes the larger hole (arbitrary API surface, not just arbitrary
+// queries) cheaply; query-content validation is a real further
+// refinement, not done in this pass — see 22-Security Hardening.md.
+const PROMETHEUS_PATH_ALLOWLIST = [/^\/api\/v1\/query$/, /^\/api\/v1\/query_range$/]
+
+function isAllowedPrometheusRequest(req: express.Request): boolean {
+  return req.method === 'GET' && PROMETHEUS_PATH_ALLOWLIST.some(re => re.test(req.path))
+}
+
 app.use(
   '/prometheus',
+  (req, res, next) => {
+    if (!isAllowedPrometheusRequest(req)) {
+      res.status(403).json({ error: 'This Prometheus API path is not permitted through this proxy.' })
+      return
+    }
+    next()
+  },
   createProxyMiddleware({
     target: PROMETHEUS_HOST,
     changeOrigin: true,
@@ -272,8 +315,28 @@ app.use(
 )
 
 // ── Proxmox proxy ──────────────────────────────────────────────────
+// Same fix, same reasoning as Prometheus above — restricted to the
+// exact two path shapes client/src/services/proxmox.ts actually calls
+// (/nodes and /nodes/:node/status). Before this, /proxmox/* forwarded
+// any path to the real Proxmox API with the real PROXMOX_TOKEN
+// attached — meaning the public internet had full authenticated access
+// to whatever that token's actual permissions allow, not just the two
+// read-only status endpoints this app was ever meant to expose.
+const PROXMOX_PATH_ALLOWLIST = [/^\/nodes$/, /^\/nodes\/[a-zA-Z0-9_-]+\/status$/]
+
+function isAllowedProxmoxRequest(req: express.Request): boolean {
+  return req.method === 'GET' && PROXMOX_PATH_ALLOWLIST.some(re => re.test(req.path))
+}
+
 app.use(
   '/proxmox',
+  (req, res, next) => {
+    if (!isAllowedProxmoxRequest(req)) {
+      res.status(403).json({ error: 'This Proxmox API path is not permitted through this proxy.' })
+      return
+    }
+    next()
+  },
   createProxyMiddleware({
     target: `${PROXMOX_HOST}/api2/json`,
     changeOrigin: true,
@@ -288,7 +351,23 @@ app.use(
 )
 
 // ── Zabbix proxy ───────────────────────────────────────────────────
+// Restricted to method: 'host.get' — added 22-Security Hardening. Before
+// this, req.body.method was forwarded to Zabbix's JSON-RPC API
+// completely unchecked: any caller could invoke any Zabbix API method
+// with this route's real bearer token attached, not just the read-only
+// host status check this app actually needs. host.get is the only
+// method client/src/services/zabbix.ts, poller.ts, or nudge.ts ever
+// call.
+const ZABBIX_ALLOWED_METHODS = new Set(['host.get'])
+
 app.post('/zabbix', express.json(), async (req, res) => {
+  const method = req.body?.method
+
+  if (!ZABBIX_ALLOWED_METHODS.has(method)) {
+    res.status(403).json({ error: 'This Zabbix API method is not permitted through this proxy.' })
+    return
+  }
+
   try {
     const token = await getZabbixToken()
 
@@ -309,7 +388,9 @@ app.post('/zabbix', express.json(), async (req, res) => {
     const json = await response.json()
     res.json(json)
   } catch (error) {
-    res.status(500).json({ error: String(error) })
+    // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
   }
 })
 
