@@ -16,18 +16,21 @@ on:
 jobs:
   client:
     runs-on: ubuntu-latest
-    # No working-directory override — the client app lives at the repo
-    # root (src/, public/, package.json, vite.config.ts all sit there
-    # directly), not in a client/ subfolder. Only proxy/ is actually
-    # nested. Confirmed the hard way: this job failed with "No such file
-    # or directory" for a client/ working directory that doesn't exist.
+    # 26-Client Folder Restructure.md — the client app now genuinely
+    # lives in client/, so this working-directory override is correct
+    # again. It was removed in 23-'s original build specifically
+    # because it wasn't true yet at that point; restored here once it
+    # actually is.
+    defaults:
+      run:
+        working-directory: client
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: package-lock.json
+          cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run lint
