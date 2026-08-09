@@ -24,8 +24,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run lint
@@ -44,8 +42,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: proxy/package-lock.json
       - run: npm ci
       # passWithNoTests in vitest.config.ts means this succeeds cleanly
       # today (18-'s Phase 2 hasn't been built yet) and will actually
