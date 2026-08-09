@@ -12,7 +12,7 @@ import {
   appendIncidentUpdate,
   updateIncidentStatus,
 } from './db'
-import { addNudgeClient, removeNudgeClient, startNudgeChecker } from './nudge'
+import { addNudgeClient, removeNudgeClient, startNudgeChecker, getCachedOverallStatus } from './nudge'
 
 dotenv.config()
 
@@ -273,6 +273,47 @@ app.get('/events', (req, res) => {
   req.on('close', () => {
     removeNudgeClient(res)
   })
+})
+
+// ── Embeddable status badge (20-Embeddable Status Badge) ────────────
+// Public, unauthenticated. Deliberately NOT computed live per request —
+// reads whatever nudge.ts's 20s loop last cached. Colors match
+// StatusBadge.tsx's green/yellow/red/gray mapping exactly. Hand-rolled
+// SVG, no image library, same precedent as UptimeBars/MiniLineChart.
+const BADGE_COLORS: Record<string, string> = {
+  operational: '#22c55e',
+  degraded: '#eab308',
+  outage: '#ef4444',
+  unknown: '#71717a',
+}
+
+const BADGE_LABELS: Record<string, string> = {
+  operational: 'Operational',
+  degraded: 'Degraded',
+  outage: 'Outage',
+  unknown: 'Unknown',
+}
+
+app.get('/badge.svg', (_req, res) => {
+  const status = getCachedOverallStatus()
+  const color = BADGE_COLORS[status]
+  const label = BADGE_LABELS[status]
+  const text = `Homelab Status: ${label}`
+  const width = 40 + text.length * 6.2
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="20" role="img" aria-label="${text}">
+  <rect width="${width}" height="20" rx="3" fill="#18181b"/>
+  <circle cx="14" cy="10" r="5" fill="${color}"/>
+  <text x="26" y="14" font-family="Verdana, Geneva, sans-serif" font-size="11" fill="#e4e4e7">${text}</text>
+</svg>`
+
+  res.setHeader('Content-Type', 'image/svg+xml')
+  // Bounded to the nudge loop's own cadence — long enough that an
+  // embedding site's CDN isn't refetching every pageview, short enough
+  // that staleness never drifts past what the nudge channel already
+  // tolerates.
+  res.setHeader('Cache-Control', 'public, max-age=60')
+  res.send(svg)
 })
 
 // ── Prometheus proxy ──────────────────────────────────────────────

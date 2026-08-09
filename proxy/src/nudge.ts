@@ -80,39 +80,85 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
   return json.data.result
 }
 
-// Deliberately narrow — only the two queries that actually determine a
-// status (up{} and nut_ups_status), not the CPU/memory/runtime/load
-// metadata the client's own prometheus.ts also fetches for display.
-// Those change essentially every tick and would nudge constantly,
-// defeating the entire point of a *change* signal. This function's only
-// job is "did anything's status actually flip," not "reproduce
-// everything the client shows."
-async function getPrometheusSignature(): Promise<string> {
+type Status = 'operational' | 'degraded' | 'outage' | 'unknown'
+
+// Mirrors client/src/services/index.ts's deriveOverallStatus exactly —
+// outage beats degraded beats "everything operational," anything else
+// (including an empty list) falls back to unknown. A second, proxy-side
+// copy for the same reason zabbix.ts's status logic already has three:
+// the badge can't call into client code. NOT solved by shared code —
+// see 04-Services Index's "On duplicating this file's logic into the
+// proxy" for the threshold decision. This is exactly the kind of copy
+// 18-'s Phase 2 fixture-parity test is meant to catch drift on — that
+// test doesn't exist yet as of this build, flagged as a real gap below,
+// not silently skipped.
+function deriveOverallStatus(statuses: Status[]): Status {
+  if (statuses.length === 0) return 'unknown'
+  if (statuses.some(s => s === 'outage')) return 'outage'
+  if (statuses.some(s => s === 'degraded')) return 'degraded'
+  if (statuses.every(s => s === 'operational')) return 'operational'
+  return 'unknown'
+}
+
+interface PrometheusCheckResult {
+  signature: string
+  statuses: Status[]
+}
+
+async function getPrometheusCheck(): Promise<PrometheusCheckResult> {
   const [upResults, statusResults] = await Promise.all([
     queryPrometheus('up{job="node_exporter"}'),
     queryPrometheus('nut_ups_status'),
   ])
 
   const nodes = upResults.map(r => `${r.metric.instance}:${r.value[1]}`).sort()
+  const nodeStatuses: Status[] = upResults.map(r => (r.value[1] === '1' ? 'operational' : 'outage'))
 
   const activeFlags = statusResults
     .filter(r => r.value[1] === '1')
     .map(r => r.metric.status)
     .sort()
 
-  return JSON.stringify({ nodes, ups: activeFlags })
+  // Same OL/OB/LB priority as prometheus.ts's fetchUpsStatus — LB
+  // (low battery) worst, then OB (on battery), then OL (online).
+  // Mirrored, not shared — same reasoning as deriveZabbixStatus below.
+  let upsStatus: Status = 'unknown'
+  if (activeFlags.includes('LB')) upsStatus = 'outage'
+  else if (activeFlags.includes('OB')) upsStatus = 'degraded'
+  else if (activeFlags.includes('OL')) upsStatus = 'operational'
+
+  return {
+    signature: JSON.stringify({ nodes, ups: activeFlags }),
+    statuses: [...nodeStatuses, upsStatus],
+  }
 }
 
-async function getProxmoxSignature(port: string | number): Promise<string> {
+interface ProxmoxCheckResult {
+  signature: string
+  statuses: Status[]
+}
+
+async function getProxmoxCheck(port: string | number): Promise<ProxmoxCheckResult> {
   const response = await fetch(`http://localhost:${port}/proxmox/nodes`)
   if (!response.ok) throw new Error(`Proxmox check failed: ${response.status}`)
 
   const json = await response.json() as { data: ProxmoxNodeSummary[] }
   const nodes = json.data.map(n => `${n.node}:${n.status}`).sort()
-  return JSON.stringify(nodes)
+  // Summary-level only — this hits /proxmox/nodes, not the per-node
+  // detail call the client's two-stage adapter also makes, so there's
+  // no "unreachable" third case here. 'online' -> operational,
+  // anything else -> outage, same as poller.ts's own derivation.
+  const statuses: Status[] = json.data.map(n => (n.status === 'online' ? 'operational' : 'outage'))
+
+  return { signature: JSON.stringify(nodes), statuses }
 }
 
-async function getZabbixSignature(port: string | number): Promise<string> {
+interface ZabbixCheckResult {
+  signature: string
+  statuses: Status[]
+}
+
+async function getZabbixCheck(port: string | number): Promise<ZabbixCheckResult> {
   const response = await fetch(`http://localhost:${port}/zabbix`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -126,8 +172,10 @@ async function getZabbixSignature(port: string | number): Promise<string> {
 
   const json = await response.json() as { result?: ZabbixHost[] }
   const hosts = (json.result ?? []).filter(h => h.name !== ZABBIX_SERVER_NAME)
-  const signature = hosts.map(h => `${h.hostid}:${deriveZabbixStatus(h.interfaces)}`).sort()
-  return JSON.stringify(signature)
+  const statuses = hosts.map(h => deriveZabbixStatus(h.interfaces) as Status)
+  const signature = hosts.map((h, i) => `${h.hostid}:${statuses[i]}`).sort()
+
+  return { signature: JSON.stringify(signature), statuses }
 }
 
 // Open SSE connections, keyed by nothing in particular — just a set of
@@ -157,21 +205,39 @@ function sendKeepAlive(): void {
 }
 
 let lastSignature: string | null = null
+let cachedOverallStatus: Status = 'unknown'
+
+// Read by index.ts's /badge.svg route. Synchronous, no fetch — the
+// badge's own staleness is bounded by this loop's 20s cadence, the
+// same accepted tradeoff the nudge channel itself already has.
+export function getCachedOverallStatus(): Status {
+  return cachedOverallStatus
+}
 
 async function checkForChanges(port: string | number): Promise<void> {
   try {
     const [prometheus, proxmox, zabbix] = await Promise.all([
-      getPrometheusSignature(),
-      getProxmoxSignature(port),
-      getZabbixSignature(port),
+      getPrometheusCheck(),
+      getProxmoxCheck(port),
+      getZabbixCheck(port),
     ])
 
-    const signature = JSON.stringify({ prometheus, proxmox, zabbix })
+    const signature = JSON.stringify({
+      prometheus: prometheus.signature,
+      proxmox: proxmox.signature,
+      zabbix: zabbix.signature,
+    })
 
-    // First check ever — establish a baseline silently. Every already-
-    // connected client already fetched fresh data on mount; nudging
-    // them again immediately would just be a redundant refetch with
-    // nothing new to show for it.
+    // Recomputed and cached every tick regardless of whether the
+    // signature changed — cheap, since it's just a reduce over data
+    // already fetched this tick, and it keeps the badge's staleness
+    // bounded by "last tick," not "last time something also changed."
+    cachedOverallStatus = deriveOverallStatus([
+      ...prometheus.statuses,
+      ...proxmox.statuses,
+      ...zabbix.statuses,
+    ])
+
     if (lastSignature === null) {
       lastSignature = signature
       return
@@ -182,12 +248,6 @@ async function checkForChanges(port: string | number): Promise<void> {
       broadcastNudge()
     }
   } catch (error) {
-    // A failed check (Prometheus briefly unreachable, a timeout, etc.)
-    // shouldn't crash this loop or spuriously nudge every connected
-    // client — skip this tick and try again on the next one. The
-    // client's own 60s poll is still the fallback for exactly this
-    // scenario, which is the whole reason this stays "hybrid" rather
-    // than becoming the sole source of truth.
     console.error('Nudge check failed:', error)
   }
 }
