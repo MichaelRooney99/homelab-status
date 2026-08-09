@@ -200,6 +200,20 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
+
+        if (res.status === 404) {
+          // Expected, not a bug — see 21-Manual Incident Authoring UI.md's
+          // stated scope boundary. Incidents seeded from incidents.json
+          // predate the admin tool and were never given a database row
+          // this route can find; only incidents created through this UI
+          // (or auto-drafted ones) can be updated here. A bare 404 with
+          // no explanation was the actual gap worth fixing, not this
+          // boundary itself.
+          alert("This incident predates the admin tool and can't be edited here — it's one of the original hand-written entries in incidents.json, not a database-backed one. Edit incidents.json directly and redeploy for changes to entries this old.");
+          button.disabled = false;
+          return;
+        }
+
         if (!res.ok) throw new Error(`${res.status}`);
         input.value = '';
         loadIncidents();
