@@ -44,7 +44,7 @@ Each service also shows a 90-day uptime history where a real data source exists 
 
 The browser only ever talks to one origin. The proxy is never exposed publicly — the Cloudflare tunnel routes exactly one hostname to exactly one port (nginx), so a second internal service means nginx reverse-proxying to it, not a second public port.
 
-Full write-up of every architectural decision (why single-origin, why two-stage Docker builds, why build-time env baking instead of runtime config) is in the project's Obsidian vault — `12-Deployment Architecture.md` and the rest of the numbered doc series (`00` through `11`) if you have access to it. This README covers what you need to actually run the thing.
+This README covers what you need to actually run the thing — the deeper reasoning behind these architectural choices (why single-origin, why two-stage Docker builds, why build-time env baking instead of runtime config) lives in the author's own project notes rather than being duplicated here.
 
 ---
 
@@ -56,8 +56,10 @@ Full write-up of every architectural decision (why single-origin, why two-stage 
 |Data fetching|TanStack Query|
 |Styling|Tailwind CSS v4|
 |Proxy server|Express + TypeScript|
+|Testing|Vitest — both packages, including a shared-fixture parity check between duplicated status-derivation logic|
 |Containerization|Docker Compose|
 |Reverse proxy|nginx|
+|CI|GitHub Actions|
 |Public access|Cloudflare Zero Trust tunnel|
 
 ---
@@ -66,27 +68,38 @@ Full write-up of every architectural decision (why single-origin, why two-stage 
 
 ```
 homelab-status/
+├── .github/
+│   └── workflows/
+│       └── ci.yml                   ← client tests/lint/build + proxy tests, zero secrets
+├── fixtures/
+│   └── parity/                      ← shared test data, sibling to client/ and proxy/
+│       ├── overall-status.json
+│       └── zabbix-availability.json
 ├── client/
 │   ├── public/
 │   │   └── admin/
-│   │       └── index.html      ← standalone admin UI (added 08-08-2026) — plain HTML/JS, no router added to the React app for one page, gated by Cloudflare Access on /admin/*, not application code
+│   │       └── index.html      ← standalone admin UI — plain HTML/JS, no router added to the React app for one page, gated by Cloudflare Access on /admin/*, not application code
 │   ├── src/
 │   │   ├── services/       ← one adapter per data source, normalized to ServiceStatus[]
 │   │   │   ├── types.ts
 │   │   │   ├── prometheus.ts
 │   │   │   ├── proxmox.ts
 │   │   │   ├── zabbix.ts
+│   │   │   ├── zabbix.test.ts
 │   │   │   ├── incidents.ts   ← incident history adapter
 │   │   │   ├── history.ts     ← 90-day uptime history — Prometheus for Nodes/Power, proxy snapshot poller for Proxmox API/Zabbix
-│   │   │   └── index.ts       ← facade — Promise.allSettled across service adapters, incidents fetched separately
+│   │   │   ├── history.test.ts
+│   │   │   ├── index.ts       ← facade — Promise.allSettled across service adapters, incidents fetched separately
+│   │   │   └── index.test.ts
 │   │   ├── lib/
-│   │   │   └── uptime.ts      ← calculateUptimePercent — pure math with no service/component home, kept out of App.tsx to satisfy Vite's Fast Refresh rules
+│   │   │   ├── uptime.ts      ← calculateUptimePercent — pure math with no service/component home, kept out of App.tsx to satisfy Vite's Fast Refresh rules
+│   │   │   └── uptime.test.ts
 │   │   ├── hooks/
-│   │   │   ├── useServiceStatus.ts    ← live status, 60s poll — now supplemented by a nudge listener (see useLiveNudge.ts)
+│   │   │   ├── useServiceStatus.ts    ← live status, 60s poll — supplemented by a nudge listener (see useLiveNudge.ts)
 │   │   │   ├── useUptimeHistory.ts    ← history, hourly poll, takes the live service list as an argument
 │   │   │   ├── useTabAlert.ts         ← reflects alert state in the tab title and favicon
 │   │   │   ├── useCommandPalette.ts   ← Cmd/Ctrl+K and "/" trigger, guarded against firing while typing
-│   │   │   └── useLiveNudge.ts        ← added 08-06-2026 — listens on /events, triggers an early refetch on top of (not instead of) the 60s poll
+│   │   │   └── useLiveNudge.ts        ← listens on /events, triggers an early refetch on top of (not instead of) the 60s poll
 │   │   ├── components/
 │   │   │   ├── StatusBadge.tsx
 │   │   │   ├── ServiceRow.tsx
@@ -101,21 +114,26 @@ homelab-status/
 │   │   │   ├── MiniLineChart.tsx       ← hand-rolled SVG line chart, no charting library
 │   │   │   ├── ThemeToggle.tsx         ← light/dark toggle
 │   │   │   └── CommandPalette.tsx      ← Cmd/Ctrl+K search across services, categories, incidents
-│   │   ├── App.tsx
+│   │   ├── App.tsx             ← two-column layout at tablet/desktop widths: category status on one side, incident history in its own aside
 │   │   └── main.tsx
+│   ├── vite.config.ts          ← also doubles as the Vitest config
+│   ├── tsconfig.app.json
 │   ├── Dockerfile
-│   ├── nginx.conf   ← two real routing bugs found here 08-08-2026: a too-broad /admin/ forward rule swallowing the page request, and a missing $uri/ step in try_files that had likely been latent since the first deploy — see the 08-08-2026 changelog
+│   ├── nginx.conf
 │   └── .env
 ├── proxy/
 │   ├── src/
-│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, POST+PATCH /admin/incidents (added 08-08-2026, Cloudflare Access-gated), plus the Proxmox/Zabbix/Prometheus proxy passthroughs
-│   │   ├── db.ts        ← node:sqlite storage — snapshot poller history, auto-drafted incidents (08-05-2026), and manual incidents (08-08-2026, same table, source/title/affected_services columns distinguish the two)
+│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, /badge.svg, POST+PATCH /admin/incidents (Cloudflare Access-gated), plus the Proxmox/Zabbix/Prometheus proxy passthroughs
+│   │   ├── db.ts        ← node:sqlite storage — snapshot poller history, auto-drafted incidents, and manual incidents (same table, source/title/affected_services columns distinguish them)
 │   │   ├── poller.ts    ← independent 15-minute background poll for Proxmox API/Zabbix history, and the auto-drafted-incident threshold check
-│   │   └── nudge.ts     ← added 08-06-2026 — a separate 20-second loop broadcasting a bare SSE signal when any service's status changes
-│   ├── incidents.json   ← hand-edited, git-tracked incident data, bind-mounted read-only into the container — the original historical seed; every new incident since 08-05-2026, auto or manual, lives in the database instead
+│   │   ├── nudge.ts     ← a separate 20-second loop broadcasting a bare SSE signal when any service's status changes, and caching an overall status the badge route reads
+│   │   └── nudge.test.ts
+│   ├── dist/             ← tsc build output — this is what actually runs in the container, not src/*.ts directly
+│   ├── vitest.config.ts
+│   ├── incidents.json    ← hand-edited, git-tracked incident data, bind-mounted read-only into the container — the original historical seed; every new incident, auto or manual, lives in the database instead
 │   ├── Dockerfile
 │   └── .env
-├── docker-compose.yml   ← includes a named volume (snapshots-data) so poller history survives redeploys
+├── docker-compose.yml    ← includes a named volume (snapshots-data) so poller history survives redeploys
 ├── README.md
 └── .dockerignore
 ```
@@ -169,25 +187,27 @@ The 90-day uptime bars pull from two different sources depending on category. **
 
 ## Public API
 
-Every route below is a plain `GET` returning JSON, reachable at `https://status.michaelrooney.dev/<path>` — no authentication, read-only.
+Every route below is a plain `GET` returning JSON (or, for `/badge.svg`, an SVG image), reachable at `https://status.michaelrooney.dev/<path>` — no authentication, read-only.
 
 |Route|Returns|
 |---|---|
 |`/health`|`{ "status": "ok" }` — proxy liveness check|
-|`/incidents`|Array of `Incident` objects — id, title, status, timestamps, affected services, a timeline of updates, and a `source` field (`"manual"` or `"auto"`, added 08-05-2026 — hand-written entries from `incidents.json` and auto-drafted ones from sustained outage detection are merged into one array here). See `types.ts` for the full shape.|
+|`/incidents`|Array of `Incident` objects — id, title, status, timestamps, affected services, a timeline of updates, and a `source` field (`"manual"` or `"auto"` — hand-written entries from `incidents.json` and auto-drafted ones from sustained outage detection are merged into one array here). See `types.ts` for the full shape.|
 |`/history/:serviceId`|90-day day-bucketed history for one service, `[{ "date": "2026-07-25", "status": "operational" }, ...]`. Service ids match what `/incidents`' `affectedServices` field and the live status page use — e.g. `proxmox-ankhh`, `ups-cyberpower`, `zabbix-10781`.|
-|`/events`|Server-Sent Events stream, added 08-06-2026. Broadcasts a bare `event: nudge` message whenever any monitored service's status actually changes — no data payload, just a signal telling an already-connected client to refetch `/incidents`/live status sooner than its next scheduled poll. Sends a `: keep-alive` comment line every 15 seconds to survive Cloudflare's edge idle-connection timeout; `EventSource` clients ignore comment lines by spec.|
+|`/events`|Server-Sent Events stream. Broadcasts a bare `event: nudge` message whenever any monitored service's status actually changes — no data payload, just a signal telling an already-connected client to refetch `/incidents`/live status sooner than its next scheduled poll. Sends a `: keep-alive` comment line every 15 seconds to survive Cloudflare's edge idle-connection timeout; `EventSource` clients ignore comment lines by spec.|
+|`/badge.svg`|A small SVG image showing overall status — a colored dot plus a label (`Operational`/`Degraded`/`Outage`/`Unknown`). Embeddable anywhere with a plain `<img>` tag — no CORS restrictions apply the way they do to `fetch`. Not computed live per request; reads a value cached by the proxy's own 20-second status-check loop, so repeated requests never add load to Prometheus/Proxmox/Zabbix. `Cache-Control: public, max-age=60`.|
 
 Example:
 
 ```bash
 curl https://status.michaelrooney.dev/incidents
 curl https://status.michaelrooney.dev/history/proxmox-ankhh
+curl https://status.michaelrooney.dev/badge.svg
 ```
 
-There's no single combined "everything at once" endpoint yet — an external consumer currently needs to hit these separately, the same way the client itself does. That's a deliberate scope call, not an oversight: see `16-Next-Round Functionality.md` (in the project's Obsidian vault, if you have access to it) for the reasoning on why a combined feed wasn't built speculatively.
+There's no single combined "everything at once" endpoint yet — an external consumer currently needs to hit these separately, the same way the client itself does. That's a deliberate scope call, not an oversight: three separate calls matches what the client itself does internally, and a combined feed wasn't worth building speculatively without real demand for one.
 
-**Not public:** `POST /admin/incidents` and `PATCH /admin/incidents/:id` (added 08-08-2026) let an authenticated admin create and update incidents directly, without a git push. Gated by Cloudflare Access on the `/admin/*` path — unauthenticated requests never reach these routes at all. See `21-Manual Incident Authoring UI.md` for the full design.
+**Not public:** `POST /admin/incidents` and `PATCH /admin/incidents/:id` let an authenticated admin create and update incidents directly, without a git push. Gated by Cloudflare Access on the `/admin/*` path — unauthenticated requests never reach these routes at all.
 
 ---
 
@@ -245,7 +265,7 @@ Full writeup of how these pieces fit together — the anti-flash inline script, 
 
 - [Ansible docs — Getting started](https://docs.ansible.com/ansible/latest/getting_started/index.html)
 - [Playbooks guide](https://docs.ansible.com/ansible/latest/playbook_guide/index.html)
-- [Ansible Vault](https://docs.ansible.com/ansible/latest/vault_guide/index.html) — worth reading in full after the `--check --diff` plaintext leak this project hit firsthand
+- [Ansible Vault](https://docs.ansible.com/ansible/latest/vault_guide/index.html) — worth reading in full after a real `--check --diff` plaintext-secret leak this project hit firsthand
 - [Jinja2 templating in Ansible](https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_templating.html)
 
 ### Prometheus
@@ -279,7 +299,7 @@ Prometheus is itself a scraper — it's the reason Proxmox Nodes and Power get r
 
 ### Cloudflare Zero Trust / Tunnels
 
-The tunnel itself has carried the whole project since the first deploy — no inbound ports opened anywhere on the homelab network, `cloudflared` holding an outbound-only connection out to Cloudflare instead. `21-Manual Incident Authoring UI` (08-08-2026) added the first real access-control layer on top of that: **Cloudflare Access**, gated to the `/admin/*` path specifically, protecting the new admin routes with zero application-level auth code — no password, no session store, nothing in `index.ts` checking who's asking. Access validates identity at Cloudflare's own edge, before a request ever reaches this project's containers.
+The tunnel itself has carried the whole project since the first deploy — no inbound ports opened anywhere on the homelab network, `cloudflared` holding an outbound-only connection out to Cloudflare instead. Adding the admin UI's write-capable routes brought the first real access-control layer on top of that: **Cloudflare Access**, gated to the `/admin/*` path specifically, protecting the admin routes with zero application-level auth code — no password, no session store, nothing in `index.ts` checking who's asking. Access validates identity at Cloudflare's own edge, before a request ever reaches this project's containers.
 
 One real, sharp thing worth knowing before relying on this pattern elsewhere: **publishing a tunnel route does not protect it by default.** A published application with no Access application configured in front of it is reachable by anyone who knows the URL. The Access application had to be created as a genuinely separate step — see the journal entry linked below for the full walkthrough of setting this up for real, including two nginx bugs it surfaced along the way.
 
@@ -291,6 +311,19 @@ One real, sharp thing worth knowing before relying on this pattern elsewhere: **
 - [Common Access policies](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/common-policies/) — the email-based Allow policy this project's single-admin setup uses is close to the simplest real-world case documented here
 
 Full write-up of the actual setup — including the "publishing isn't protecting" gotcha and both nginx bugs it exposed — in the journal: [Publishing Isn't the Same as Protecting](https://michaelrooney.dev/journal/08-08-2026.html).
+
+### GitHub Actions / CI-CD
+
+Why CI shipped and CD deliberately didn't — and the real constraint behind that (GitHub's hosted runners can't reach a homelab sitting behind an outbound-only Cloudflare tunnel) — is written up in the journal: [CI and CD Are Not One Thing](https://michaelrooney.dev/journal/08-08-2026b.html).
+
+- [GitHub Actions — Understanding GitHub Actions](https://docs.github.com/en/actions/get-started/understanding-github-actions) — the concepts (workflows, jobs, steps, runners) this repo's `.github/workflows/ci.yml` is built from
+- [GitHub Actions — Workflow syntax reference](https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions) — the actual YAML shape, useful when a workflow file doesn't do what it looks like it should
+- [GitHub Actions — Triggering a workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/triggering-a-workflow) — `on: push` / `on: pull_request`, the trigger conditions this repo's workflow actually uses
+- [GitHub Actions — About hosted runners](https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/about-github-hosted-runners) — what a hosted runner actually is, and why it has no path into a private LAN — the real constraint behind why CD wasn't built alongside CI here
+- [GitHub Actions — About self-hosted runners](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/about-self-hosted-runners) — one real option for a future CD path, not yet built
+- [Martin Fowler — Continuous Integration](https://martinfowler.com/articles/continuousIntegration.html) — the classic reference on what CI actually means as a *practice*, not just a tool
+- [Atlassian — Continuous Integration vs. Continuous Delivery vs. Continuous Deployment](https://www.atlassian.com/continuous-delivery/principles/continuous-integration-vs-delivery-vs-deployment) — the terminology distinction that shaped scoping this as two separate decisions instead of one
+- [`ansible-lint` documentation](https://ansible.readthedocs.io/projects/lint/) — what runs in the companion Ansible repo's own CI workflow
 
 ---
 
