@@ -126,8 +126,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-capstone-bg text-capstone-text">
-      <div className="max-w-3xl mx-auto px-4 py-12 space-y-8">
-
+      <div className="max-w-3xl md:max-w-5xl lg:max-w-7xl mx-auto px-4 py-12 space-y-8">
+        
         <header className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs uppercase tracking-widest text-capstone-muted mb-1">
@@ -150,6 +150,38 @@ export default function App() {
             <ThemeToggle />
           </div>
         </header>
+{/*
+  25-Incident List Layout — final version.
+
+  This is the block that goes INSIDE the existing outer container div:
+    <div className="max-w-3xl md:max-w-4xl lg:max-w-6xl mx-auto px-4 py-12 space-y-8">
+  That container line is NOT repeated here — it already exists further up
+  App.tsx, right after the opening <div className="min-h-screen ..."> wrapper.
+  Do not duplicate it.
+
+  Two real columns at md (768px) and up:
+    - Left: OverallHealth (full-width, above the split) + main content
+      column (category filter chip + every category section)
+    - Right: one aside column, DaysSinceIncident and IncidentList
+      stacked together as a single unit — NOT split into their own
+      separate sub-columns.
+
+  Below md: single stacked column, aside content appears ABOVE the
+  category sections (matches today's original top-to-bottom order) —
+  achieved via md:order-2/md:order-1, not by moving the aside's markup
+  position, so CommandPalette's incident scrollIntoView still targets
+  the same DOM element it always has, just a different final scroll
+  position once this ships.
+
+  Aside width: 280px at md (tablet), widening to 340px at lg (desktop)
+  via the second grid-cols/gap override — a tablet gets a tighter aside
+  than full desktop rather than one fixed width for every screen above
+  the breakpoint.
+
+  items-start (not stretch) keeps the aside from being forced to match
+  the main column's height. Sticky positioning deliberately deferred,
+  per 25-'s own recommendation — plain two-column layout first.
+*/}
 
         <OverallHealth
           status={statusPage.overall}
@@ -158,51 +190,58 @@ export default function App() {
           outageCount={outageCount}
         />
 
-        <DaysSinceIncident incidents={statusPage.incidents} />
+        <div className="md:grid md:grid-cols-[1fr_280px] lg:grid-cols-[1fr_340px] md:items-start md:gap-6 lg:gap-8 space-y-8 md:space-y-0">
 
-        <IncidentList incidents={statusPage.incidents} focusId={focusIncidentId} />
+          <aside className="space-y-8 md:order-2" aria-label="Incident history">
+            <DaysSinceIncident incidents={statusPage.incidents} />
+            <IncidentList incidents={statusPage.incidents} focusId={focusIncidentId} />
+          </aside>
 
-        {categoryFilter && (
-          <div className="flex items-center justify-between rounded-lg border border-capstone-border bg-capstone-bg-raised px-4 py-2 text-xs text-capstone-muted">
-            <span>
-              Filtered to <span className="text-capstone-text">{categoryFilter}</span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setCategoryFilter(null)}
-              className="text-capstone-muted hover:text-capstone-text underline underline-offset-2"
-            >
-              Clear
-            </button>
+          <div className="space-y-8 md:order-1">
+            {categoryFilter && (
+              <div className="flex items-center justify-between rounded-lg border border-capstone-border bg-capstone-bg-raised px-4 py-2 text-xs text-capstone-muted">
+                <span>
+                  Filtered to <span className="text-capstone-text">{categoryFilter}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter(null)}
+                  className="text-capstone-muted hover:text-capstone-text underline underline-offset-2"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {Array.from(visibleGroups.entries()).map(([category, services]) => (
+              <section key={category}>
+                <h2 className="font-serif text-sm uppercase tracking-widest text-capstone-accent mb-3">
+                  {category}
+                </h2>
+                <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6">
+                  {services.map(service => {
+                    const realHistory = history[service.id]
+                    const days = realHistory ?? generatePlaceholderDays(service.status)
+                    const uptimePercent = realHistory
+                      ? calculateUptimePercent(realHistory)
+                      : service.status === 'operational' ? 100 : undefined
+
+                    return (
+                      <ServiceRow
+                        key={service.id}
+                        service={service}
+                        days={days}
+                        uptimePercent={uptimePercent}
+                        onSelect={setSelectedService}
+                      />
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
-        )}
 
-        {Array.from(visibleGroups.entries()).map(([category, services]) => (
-          <section key={category}>
-            <h2 className="font-serif text-sm uppercase tracking-widest text-capstone-accent mb-3">
-              {category}
-            </h2>
-            <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6">
-              {services.map(service => {
-                const realHistory = history[service.id]
-                const days = realHistory ?? generatePlaceholderDays(service.status)
-                const uptimePercent = realHistory
-                  ? calculateUptimePercent(realHistory)
-                  : service.status === 'operational' ? 100 : undefined
-
-                return (
-                  <ServiceRow
-                    key={service.id}
-                    service={service}
-                    days={days}
-                    uptimePercent={uptimePercent}
-                    onSelect={setSelectedService}
-                  />
-                )
-              })}
-            </div>
-          </section>
-        ))}
+        </div>
 
         <footer className="text-xs text-capstone-muted text-center pt-4">
           Polling every 60 seconds · Built with React + TanStack Query
