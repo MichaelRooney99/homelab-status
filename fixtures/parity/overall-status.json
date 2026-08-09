@@ -1,0 +1,10 @@
+[
+  { "statuses": [], "expected": "unknown" },
+  { "statuses": ["operational"], "expected": "operational" },
+  { "statuses": ["operational", "operational"], "expected": "operational" },
+  { "statuses": ["operational", "degraded"], "expected": "degraded" },
+  { "statuses": ["operational", "outage"], "expected": "outage" },
+  { "statuses": ["degraded", "outage"], "expected": "outage" },
+  { "statuses": ["unknown"], "expected": "unknown" },
+  { "statuses": ["operational", "unknown"], "expected": "unknown" }
+]

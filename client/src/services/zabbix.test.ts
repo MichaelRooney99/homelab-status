@@ -1,34 +1,34 @@
 import { describe, it, expect } from 'vitest'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { deriveAvailability } from './zabbix'
 
+interface ZabbixFixture {
+  interfaces: Array<{ type: string; available: string }>
+  expected: 'operational' | 'degraded' | 'outage' | 'unknown'
+}
+
+const currentDir = path.dirname(fileURLToPath(import.meta.url))
+
+const fixtures = JSON.parse(
+  readFileSync(path.join(currentDir, '../../../fixtures/parity/zabbix-availability.json'), 'utf-8')
+) as ZabbixFixture[]
+
 describe('deriveAvailability', () => {
-  it('maps available "1" to operational', () => {
-    expect(deriveAvailability([{ type: '1', available: '1' }])).toBe('operational')
-  })
+  for (const { interfaces, expected } of fixtures) {
+    it(`derives ${expected} from ${JSON.stringify(interfaces)}`, () => {
+      expect(deriveAvailability(interfaces)).toBe(expected)
+    })
+  }
 
-  it('maps available "2" to outage', () => {
-    expect(deriveAvailability([{ type: '1', available: '2' }])).toBe('outage')
-  })
-
-  it('maps available "0" (unknown) to unknown', () => {
-    expect(deriveAvailability([{ type: '1', available: '0' }])).toBe('unknown')
-  })
-
-  it('returns unknown when there is no agent interface (type "1") at all', () => {
-    expect(deriveAvailability([{ type: '2', available: '1' }])).toBe('unknown')
-  })
-
-  it('returns unknown for an empty interfaces array', () => {
-    expect(deriveAvailability([])).toBe('unknown')
-  })
-
-  // Guards against exactly the shape of the real 07-24-2026 bug — a
-  // second interface present alongside the real agent one shouldn't be
-  // able to override the correct reading.
+  // Named separately from the fixture loop specifically to call out why
+  // it matters — guards against exactly the shape of the real
+  // 07-24-2026 bug, a second interface overriding the real agent one.
   it('reads the agent interface specifically, not just the first one in the array', () => {
     const result = deriveAvailability([
-      { type: '2', available: '2' }, // some other interface, reporting outage
-      { type: '1', available: '1' }, // the actual agent interface, reporting operational
+      { type: '2', available: '2' },
+      { type: '1', available: '1' },
     ])
     expect(result).toBe('operational')
   })

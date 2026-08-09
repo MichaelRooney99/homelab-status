@@ -1,0 +1,8 @@
+[
+  { "interfaces": [{ "type": "1", "available": "1" }], "expected": "operational" },
+  { "interfaces": [{ "type": "1", "available": "2" }], "expected": "outage" },
+  { "interfaces": [{ "type": "1", "available": "0" }], "expected": "unknown" },
+  { "interfaces": [{ "type": "2", "available": "1" }], "expected": "unknown" },
+  { "interfaces": [], "expected": "unknown" },
+  { "interfaces": [{ "type": "2", "available": "2" }, { "type": "1", "available": "1" }], "expected": "operational" }
+]

@@ -47,12 +47,11 @@ interface PrometheusResult {
 const ZABBIX_SERVER_NAME = 'Zabbix server'
 const PROMETHEUS_HOST = process.env.PROMETHEUS_HOST ?? 'http://10.10.10.105:9090'
 
-// Same derivation as poller.ts's own copy, which itself mirrors the
-// client's zabbix.ts — a third duplicate now rather than shared, same
-// reasoning as before: the logic is small, and three small copies
-// still costs less than real cross-package tooling at this project's
-// size.
-function deriveZabbixStatus(interfaces: ZabbixInterface[]): string {
+// Exported for the same reason as deriveOverallStatus above — see
+// nudge.test.ts and fixtures/parity/zabbix-availability.json. Return
+// type tightened from string to Status to match the client's copy
+// exactly; behavior is unchanged.
+export function deriveZabbixStatus(interfaces: ZabbixInterface[]): Status {
   const agentInterface = interfaces.find(i => i.type === '1')
   if (!agentInterface) return 'unknown'
 
@@ -82,17 +81,13 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
 
 type Status = 'operational' | 'degraded' | 'outage' | 'unknown'
 
-// Mirrors client/src/services/index.ts's deriveOverallStatus exactly —
-// outage beats degraded beats "everything operational," anything else
-// (including an empty list) falls back to unknown. A second, proxy-side
-// copy for the same reason zabbix.ts's status logic already has three:
-// the badge can't call into client code. NOT solved by shared code —
-// see 04-Services Index's "On duplicating this file's logic into the
-// proxy" for the threshold decision. This is exactly the kind of copy
-// 18-'s Phase 2 fixture-parity test is meant to catch drift on — that
-// test doesn't exist yet as of this build, flagged as a real gap below,
-// not silently skipped.
-function deriveOverallStatus(statuses: Status[]): Status {
+// Exported as a deliberate, narrow testability exception — same
+// reasoning as client/src/services/zabbix.ts's deriveAvailability (see
+// 18-Automated Test Coverage). This is the proxy-side copy that
+// 20-Embeddable Status Badge introduced; see nudge.test.ts and
+// fixtures/parity/overall-status.json for the parity check against the
+// client's copy.
+export function deriveOverallStatus(statuses: Status[]): Status {
   if (statuses.length === 0) return 'unknown'
   if (statuses.some(s => s === 'outage')) return 'outage'
   if (statuses.some(s => s === 'degraded')) return 'degraded'
