@@ -1,0 +1,54 @@
+name: CI
+
+# Runs on every push and every PR into main — 23-GitHub Actions CI/CD's
+# Phase 1. Deliberately CI only, not CD: GitHub's hosted runners can't
+# reach the homelab at all (the Cloudflare tunnel is outbound-only by
+# design), so an actual deploy trigger is a separate, bigger decision,
+# not built here. Everything below needs nothing but a checked-out copy
+# of the repo — zero secrets in GitHub's Secrets store, genuinely safe
+# by construction, not just carefully configured to be safe.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+      # Catches real TypeScript errors, not just test failures — this
+      # is the same build step the actual Docker image runs, so a type
+      # error that would break the real deploy fails here first instead.
+      - run: npm run build
+
+  proxy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: proxy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: proxy/package-lock.json
+      - run: npm ci
+      # passWithNoTests in vitest.config.ts means this succeeds cleanly
+      # today (18-'s Phase 2 hasn't been built yet) and will actually
+      # run real tests the moment that phase lands, with no workflow
+      # change needed here.
+      - run: npm test

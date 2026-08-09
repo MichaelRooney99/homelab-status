@@ -9,5 +9,11 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // Real fix, not a formality — Vitest's default is to exit non-zero
+    // when zero test files match, treating "nothing to test" the same
+    // as "a test failed." That's correct once 18-'s Phase 2 exists;
+    // right now it would fail every CI run (23-) for a reason that has
+    // nothing to do with anything actually being broken.
+    passWithNoTests: true,
   },
 })
