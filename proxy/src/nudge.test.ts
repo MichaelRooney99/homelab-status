@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import path from 'path'
-import { deriveOverallStatus, deriveZabbixStatus } from './nudge'
+import { deriveOverallStatus, deriveZabbixStatus, compareSignature } from './nudge'
 
 interface OverallStatusFixture {
   statuses: Array<'operational' | 'degraded' | 'outage' | 'unknown'>
@@ -42,4 +42,18 @@ describe('deriveZabbixStatus (proxy copy)', () => {
       expect(deriveZabbixStatus(interfaces)).toBe(expected)
     })
   }
+})
+
+describe('compareSignature', () => {
+  it('treats a null previous signature as initial, not changed', () => {
+    expect(compareSignature(null, 'anything')).toBe('initial')
+  })
+
+  it('reports changed when the signature differs from the previous one', () => {
+    expect(compareSignature('sig-a', 'sig-b')).toBe('changed')
+  })
+
+  it('reports unchanged when the signature matches the previous one', () => {
+    expect(compareSignature('sig-a', 'sig-a')).toBe('unchanged')
+  })
 })

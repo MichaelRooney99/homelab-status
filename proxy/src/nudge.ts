@@ -44,6 +44,8 @@ interface PrometheusResult {
   value: [number, string]
 }
 
+type Status = 'operational' | 'degraded' | 'outage' | 'unknown'
+
 const ZABBIX_SERVER_NAME = 'Zabbix server'
 const PROMETHEUS_HOST = process.env.PROMETHEUS_HOST ?? 'http://10.10.10.105:9090'
 
@@ -79,7 +81,6 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
   return json.data.result
 }
 
-type Status = 'operational' | 'degraded' | 'outage' | 'unknown'
 
 // Exported as a deliberate, narrow testability exception — same
 // reasoning as client/src/services/zabbix.ts's deriveAvailability (see
@@ -209,6 +210,26 @@ export function getCachedOverallStatus(): Status {
   return cachedOverallStatus
 }
 
+export type SignatureCheckResult = 'initial' | 'changed' | 'unchanged'
+
+// Pure comparison logic, extracted from checkForChanges specifically so
+// it's testable without mocking fetch or any of the three data-source
+// checks — see 18-Automated Test Coverage.md's Phase 2 plan, the last
+// item on that list. 'initial' is its own case rather than folded into
+// 'changed' because the very first tick after a proxy restart has
+// nothing real to compare against — treating a null baseline as "the
+// status changed" would fire a spurious nudge to every connected client
+// the moment the proxy comes back up, before anything has actually
+// changed at all.
+export function compareSignature(
+  previous: string | null,
+  current: string
+): SignatureCheckResult {
+  if (previous === null) return 'initial'
+  if (previous !== current) return 'changed'
+  return 'unchanged'
+}
+
 async function checkForChanges(port: string | number): Promise<void> {
   try {
     const [prometheus, proxmox, zabbix] = await Promise.all([
@@ -233,13 +254,10 @@ async function checkForChanges(port: string | number): Promise<void> {
       ...zabbix.statuses,
     ])
 
-    if (lastSignature === null) {
-      lastSignature = signature
-      return
-    }
+    const result = compareSignature(lastSignature, signature)
+    lastSignature = signature
 
-    if (signature !== lastSignature) {
-      lastSignature = signature
+    if (result === 'changed') {
       broadcastNudge()
     }
   } catch (error) {
