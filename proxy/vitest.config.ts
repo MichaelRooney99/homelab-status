@@ -15,5 +15,15 @@ export default defineConfig({
     // right now it would fail every CI run (23-) for a reason that has
     // nothing to do with anything actually being broken.
     passWithNoTests: true,
+    // db.ts reads this at module-load time to decide where to open its
+    // node:sqlite connection — has to be set here, not in the test file
+    // itself, since a static `import` in the test file runs before any
+    // process.env assignment in that same file could take effect.
+    // ':memory:' keeps db.test.ts fully isolated from the real
+    // snapshots.db this project actually accumulates production
+    // history in.
+    env: {
+      SNAPSHOTS_DB_PATH: ':memory:',
+    },
   },
 })

@@ -21,7 +21,34 @@ const POLL_INTERVAL_MS = 15 * 60 * 1000
 // single blip (one bad reading that recovers by the next tick) while
 // still catching a genuinely sustained problem within half an hour.
 // See 16-Next-Round Functionality.md's own reasoning for this number.
-const THRESHOLD_READINGS = 2
+export const THRESHOLD_READINGS = 2
+
+export type ThresholdDecision = 'draft' | 'resolve' | 'none'
+
+// Pure decision logic, extracted from checkIncidentThreshold specifically
+// so it's testable without a real database — see 18-Automated Test
+// Coverage.md's Phase 2 plan. Takes exactly the two facts the decision
+// actually depends on (the last N readings, and whether an incident is
+// already active) rather than the serviceId/timestamp/DB access the
+// original inline version needed, so a test can call this directly with
+// plain arrays and booleans, no database involved at all.
+export function decideIncidentAction(
+  recentStatuses: string[],
+  hasActiveIncident: boolean
+): ThresholdDecision {
+  if (recentStatuses.length < THRESHOLD_READINGS) return 'none' // not enough history yet to judge a streak
+
+  const allOutage = recentStatuses.every(status => status === 'outage')
+  const allOperational = recentStatuses.every(status => status === 'operational')
+
+  if (allOutage && !hasActiveIncident) return 'draft'
+  if (allOperational && hasActiveIncident) return 'resolve'
+  return 'none'
+  // Mixed readings (one outage, one operational) fall through to 'none'
+  // on purpose — neither threshold is met, so an already-active incident
+  // stays open and a service that hasn't sustained outage long enough
+  // doesn't get one drafted yet.
+}
 
 // Checks whether a service just crossed the auto-incident threshold in
 // either direction. Called after every recorded snapshot, for every
@@ -29,24 +56,20 @@ const THRESHOLD_READINGS = 2
 // services, one query for two rows each), and re-deriving from the
 // snapshots table on every call means this is correct even right after
 // a proxy restart, with no volatile in-memory streak counter to lose.
+// Now just orchestration — the actual decision lives in
+// decideIncidentAction above.
 function checkIncidentThreshold(serviceId: string, timestamp: number): void {
   const recent = getLastStatuses(serviceId, THRESHOLD_READINGS)
-  if (recent.length < THRESHOLD_READINGS) return // not enough history yet to judge a streak
-
-  const allOutage = recent.every(status => status === 'outage')
-  const allOperational = recent.every(status => status === 'operational')
+  if (recent.length < THRESHOLD_READINGS) return // avoids a wasted DB call below when there's not enough history yet
 
   const active = getActiveDraftedIncident(serviceId)
+  const decision = decideIncidentAction(recent, active !== undefined)
 
-  if (allOutage && !active) {
+  if (decision === 'draft') {
     createDraftedIncident(serviceId, timestamp)
-  } else if (allOperational && active) {
+  } else if (decision === 'resolve' && active) {
     resolveDraftedIncident(active.id, timestamp)
   }
-  // Mixed readings (one outage, one operational) fall through here on
-  // purpose — neither threshold is met, so an already-active incident
-  // stays open and a service that hasn't sustained outage long enough
-  // doesn't get one drafted yet.
 }
 
 interface ProxmoxNodeSummary {
