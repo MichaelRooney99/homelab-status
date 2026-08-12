@@ -167,21 +167,26 @@ The client's dev-mode fallback points at `http://localhost:3001` for the proxy a
 
 ## Deployment
 
-Production deployment is fully Ansible-driven, not manual:
+Production deployment is fully Ansible-driven, not manual — and now, as of this session, can be triggered automatically as well as run by hand:
 
 ```bash
 ansible-playbook playbooks/capstone_provision.yml   # Docker + cloudflared, one-time
-ansible-playbook playbooks/capstone_deploy.yml       # clone, test-gate, build, deploy, verify
+ansible-playbook playbooks/capstone_deploy.yml       # clone, test-gate, build, deploy, verify, rollback-if-needed
 ```
+
+**Two ways this actually runs now:** manually, exactly as above, or automatically — a real push to `main` fires a GitHub Actions job that calls a Cloudflare Access–gated webhook, which triggers this exact same playbook on the Ansible control node. Same playbook either way; the webhook only changes *how* it gets invoked, not what it does once running.
 
 `capstone_deploy.yml` does more than a bare `docker compose up` — the deploy is gated end to end, in this order:
 
-1. **Clone or update the repo** on the deploy host.
-2. **Build and run both test suites** — each service's own Dockerfile `build` stage (the same stage the real deploy image comes from, dev dependencies included), then `npx vitest run` inside it. A failing test halts the play here, before anything about the running site is touched — no `.env` write, no container restart, no deploy.
-3. **Write `proxy/.env`** from Ansible Vault–stored secrets, and **bring up the Docker Compose stack**.
-4. **Health check** — waits for a clean `/health` response from the proxy.
-5. **Smoke test** — a request to `/incidents` through nginx specifically, not the proxy's own port. This is what actually catches a missing or broken nginx forward rule, the exact bug class that's broken this project's routing in production more than once.
-6. **Confirm the Cloudflare tunnel is active.**
+1. **Capture the current commit** — this is the actual rollback target if anything below fails after the stack is already live.
+2. **Clone or update the repo** on the deploy host.
+3. **Build and run both test suites** — each service's own Dockerfile `build` stage (the same stage the real deploy image comes from, dev dependencies included), then `npx vitest run` inside it. A failing test halts the play here, before anything about the running site is touched — no `.env` write, no container restart, no deploy.
+4. **Write `proxy/.env`** from Ansible Vault–stored secrets, and **bring up the Docker Compose stack**.
+5. **Health check** — waits for a clean `/health` response from the proxy.
+6. **Smoke test** — a request to `/incidents` through nginx specifically, not the proxy's own port. This is what actually catches a missing or broken nginx forward rule, the exact bug class that's broken this project's routing in production more than once.
+7. **Confirm the Cloudflare tunnel is active.**
+
+**If step 5 or 6 fails** — the stack came up, but something about it is genuinely broken in a way the test suite didn't catch — the deploy automatically rolls back to the commit captured in step 1, rebuilds, and re-verifies health. A notification fires either way (success or rollback) to a dedicated alert channel, separate from routine infrastructure noise. This is the part that specifically matters now that a deploy can be triggered by a push with nobody necessarily watching in real time — a failure that used to just sit broken until someone noticed now fixes itself within about a minute, and still gets reported as a failed run even though service was restored, since the code that was supposed to go live didn't.
 
 Redeploying after a code change is the second command alone — `git pull` happens automatically through Ansible's `git` module, and a commit that fails its own tests never reaches a running container.
 
@@ -336,16 +341,25 @@ Full write-up of the actual setup — including the "publishing isn't protecting
 
 ### GitHub Actions / CI-CD
 
-Why CI shipped and CD deliberately didn't — and the real constraint behind that (GitHub's hosted runners can't reach a homelab sitting behind an outbound-only Cloudflare tunnel) — is written up in the journal: [CI and CD Are Not One Thing](https://michaelrooney.dev/journal/08-08-2026b.html).
+Why CI shipped well before CD, and the real constraint that shaped that sequencing (GitHub's hosted runners can't reach a homelab sitting behind an outbound-only Cloudflare tunnel) — is written up in the journal: [CI and CD Are Not One Thing](https://michaelrooney.dev/journal/08-08-2026b.html). CD has since been built — see the Webhooks section right below for how a hosted runner with no path into the LAN still triggers a real deploy on it.
 
 - [GitHub Actions — Understanding GitHub Actions](https://docs.github.com/en/actions/get-started/understanding-github-actions) — the concepts (workflows, jobs, steps, runners) this repo's `.github/workflows/ci.yml` is built from
 - [GitHub Actions — Workflow syntax reference](https://docs.github.com/en/actions/reference/workflow-syntax-for-github-actions) — the actual YAML shape, useful when a workflow file doesn't do what it looks like it should
 - [GitHub Actions — Triggering a workflow](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/triggering-a-workflow) — `on: push` / `on: pull_request`, the trigger conditions this repo's workflow actually uses
-- [GitHub Actions — About hosted runners](https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/about-github-hosted-runners) — what a hosted runner actually is, and why it has no path into a private LAN — the real constraint behind why CD wasn't built alongside CI here
-- [GitHub Actions — About self-hosted runners](https://docs.github.com/en/actions/how-tos/manage-runners/self-hosted-runners/about-self-hosted-runners) — one real option for a future CD path, not yet built
+- [GitHub Actions — About hosted runners](https://docs.github.com/en/actions/how-tos/manage-runners/github-hosted-runners/about-github-hosted-runners) — what a hosted runner actually is, and why it has no path into a private LAN — the real constraint the CD webhook below was built specifically to work around, not ignore
+- [GitHub Actions — Using secrets in GitHub Actions](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions) — how the Cloudflare Access service token credentials get into the workflow without ever appearing in the repo itself
 - [Martin Fowler — Continuous Integration](https://martinfowler.com/articles/continuousIntegration.html) — the classic reference on what CI actually means as a *practice*, not just a tool
 - [Atlassian — Continuous Integration vs. Continuous Delivery vs. Continuous Deployment](https://www.atlassian.com/continuous-delivery/principles/continuous-integration-vs-delivery-vs-deployment) — the terminology distinction that shaped scoping this as two separate decisions instead of one
 - [`ansible-lint` documentation](https://ansible.readthedocs.io/projects/lint/) — what runs in the companion Ansible repo's own CI workflow
+
+### Webhooks & Automated Deployment
+
+The actual CD mechanism: a real push to `main` fires a GitHub Actions job that calls a small Flask receiver on the Ansible control node, authenticated through Cloudflare Access with a service token rather than a human login, which triggers the same `capstone_deploy.yml` playbook a manual deploy runs. Two things worth knowing going in, both of which shaped real decisions in this build: a webhook is fundamentally a *push*, not a request-response — the receiving server has to already be listening and has to decide for itself what "already handling one of these" means, since nothing stops two deliveries arriving close together. And the automated-rollback pair riding alongside this pipeline leans directly on Ansible's `block`/`rescue`/`always` error-handling structure, which is a genuinely different pattern from `failed_when`/`ignore_errors` used everywhere else in this repo's playbooks.
+
+- [Polling vs. Webhooks (Hookdeck)](https://hookdeck.com/webhooks/guides/when-to-use-webhooks) — the push-vs-pull distinction underneath why this exists at all, instead of GitHub Actions just polling something
+- [GitHub Docs — Best practices for using webhooks](https://docs.github.com/en/webhooks/using-webhooks/best-practices-for-using-webhooks) — the "respond within 30 seconds" guidance is the exact reason the receiver here kicks the real deploy off in a background thread and returns immediately rather than blocking on it
+- [Cloudflare Zero Trust — Service Tokens](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/) — the actual mechanism GitHub Actions uses to authenticate through Access with no human involved; a genuinely different policy type from the identity-based Allow policy `/admin` uses, not just a variation on it
+- [Ansible — Blocks (block/rescue/always)](https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_blocks.html) — the error-handling structure the rollback logic is built on; worth reading the note on what happens to a play's overall status once `rescue` completes successfully — it's not what a first read assumes, and it's the reason this playbook's rescue block ends with an explicit failure rather than just letting the recovery stand on its own
 
 ---
 
