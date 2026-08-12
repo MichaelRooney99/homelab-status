@@ -28,9 +28,10 @@ Each service also shows a 90-day uptime history where a real data source exists 
                     ┌─────────────────────────────┐
   Cloudflare  ───▶  │  nginx (client container)   │
   Zero Trust        │  serves static React build  │
-  tunnel            │  reverse-proxies /proxmox,   │
-                     │  /zabbix, /prometheus,      │
-                     │  /health to the proxy       │
+  tunnel            │  reverse-proxies every API,  │
+                     │  SSE, and admin route to    │
+                     │  the proxy — see Public API  │
+                     │  below for the full list     │
                      └──────────────┬──────────────┘
                                     │ Docker Compose network
                      ┌──────────────▼──────────────┐
@@ -38,7 +39,7 @@ Each service also shows a 90-day uptime history where a real data source exists 
                      │  container) — talks to the  │
                      │  real Prometheus/Proxmox/   │
                      │  Zabbix endpoints on the    │
-                     │  internal LAN               │
+                     │  internal LAN                │
                      └─────────────────────────────┘
 ```
 
@@ -125,7 +126,9 @@ homelab-status/
 │   ├── src/
 │   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, /badge.svg, POST+PATCH /admin/incidents (Cloudflare Access-gated), plus the Proxmox/Zabbix/Prometheus proxy passthroughs
 │   │   ├── db.ts        ← node:sqlite storage — snapshot poller history, auto-drafted incidents, and manual incidents (same table, source/title/affected_services columns distinguish them)
+│   │   ├── db.test.ts
 │   │   ├── poller.ts    ← independent 15-minute background poll for Proxmox API/Zabbix history, and the auto-drafted-incident threshold check
+│   │   ├── poller.test.ts
 │   │   ├── nudge.ts     ← a separate 20-second loop broadcasting a bare SSE signal when any service's status changes, and caching an overall status the badge route reads
 │   │   └── nudge.test.ts
 │   ├── dist/             ← tsc build output — this is what actually runs in the container, not src/*.ts directly
@@ -168,10 +171,19 @@ Production deployment is fully Ansible-driven, not manual:
 
 ```bash
 ansible-playbook playbooks/capstone_provision.yml   # Docker + cloudflared, one-time
-ansible-playbook playbooks/capstone_deploy.yml       # clone, configure, docker compose up
+ansible-playbook playbooks/capstone_deploy.yml       # clone, test-gate, build, deploy, verify
 ```
 
-`capstone_deploy.yml` clones this repo, writes `proxy/.env` from Ansible Vault–stored secrets, runs `docker compose up -d --build`, and waits for a clean `/health` response before considering the deploy successful. Redeploying after a code change is the second command alone — `git pull` happens automatically through Ansible's `git` module.
+`capstone_deploy.yml` does more than a bare `docker compose up` — the deploy is gated end to end, in this order:
+
+1. **Clone or update the repo** on the deploy host.
+2. **Build and run both test suites** — each service's own Dockerfile `build` stage (the same stage the real deploy image comes from, dev dependencies included), then `npx vitest run` inside it. A failing test halts the play here, before anything about the running site is touched — no `.env` write, no container restart, no deploy.
+3. **Write `proxy/.env`** from Ansible Vault–stored secrets, and **bring up the Docker Compose stack**.
+4. **Health check** — waits for a clean `/health` response from the proxy.
+5. **Smoke test** — a request to `/incidents` through nginx specifically, not the proxy's own port. This is what actually catches a missing or broken nginx forward rule, the exact bug class that's broken this project's routing in production more than once.
+6. **Confirm the Cloudflare tunnel is active.**
+
+Redeploying after a code change is the second command alone — `git pull` happens automatically through Ansible's `git` module, and a commit that fails its own tests never reaches a running container.
 
 The playbooks and full infrastructure context (which host, which VLAN, which firewall rules) live outside this repo, in the homelab's own Ansible project.
 
@@ -219,6 +231,16 @@ Links used while learning the pieces of this stack — kept here rather than los
 
 - [The Twelve-Factor App — Config](https://12factor.net/config)
 - [YouTube playlist](https://www.youtube.com/watch?v=k_0ZzvHbNBQ&list=PLillGF-RfqbYRpji8t4SxUkMxfowG4Kqp) — also listed below, it's amazing and would recommend!!
+
+### Documentation & engineering practice
+
+Code that works isn't the same as code someone else — or a future version of the person who wrote it — can actually pick up and reason about. This project's own comments went through a real audit: every reference to a private planning document got rewritten as a self-contained explanation of what the code does and why, on the theory that a comment citing a doc nobody else can see isn't documentation, it's a pointer to documentation. That pass also turned up a genuinely broken feature hiding behind a comment that correctly described behavior the actual code never implemented — a comment can be perfectly accurate about intent and still not be the thing itself. The resources below are the habits worth building on purpose rather than picking up by accident.
+
+- [Diátaxis](https://diataxis.fr/) — the four-part framework (tutorials, how-to guides, reference, explanation) behind why this README, the code's own comments, and a build journal are three different kinds of writing solving three different problems, not one document trying to do everything
+- [Keep a Changelog](https://keepachangelog.com/) — the format this project's own changelogs (Summary/Added/Changed/Fixed/Verified) are directly modeled on; the site's own case for *why* a changelog exists is worth reading even for a solo project with no other consumers yet
+- [Documenting Architecture Decisions (ADRs)](https://adr.github.io/) — a lightweight pattern for recording *why* a real decision got made, not just what it was; this project keeps its own version of this idea internally, and the practice generalizes to any project where "why didn't we just do the obvious thing" needs a real answer six months later
+- [Google Engineering Practices — code review](https://google.github.io/eng-practices/review/) — written for reviewing someone else's code, but just as useful read as a checklist before submitting your own; the sections on comments and complexity apply directly to writing code in the first place, not just reviewing it
+- [Site Reliability Engineering — Postmortem Culture](https://sre.google/sre-book/postmortem-culture/) and [Being On-Call](https://sre.google/sre-book/being-on-call/) — the free full book; these two chapters are the closest thing to a formal case for runbooks and incident writeups, and the blameless-postmortem framing is worth internalizing even for a homelab project where the only "on-call engineer" is the person who built it
 
 ### Tailwind CSS v4
 
