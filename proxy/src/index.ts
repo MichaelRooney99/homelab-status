@@ -116,15 +116,13 @@ app.get('/health', (_req, res) => {
 // time: incidents.json (hand-edited, git-tracked, read-only inside this
 // container — the original historical seed) and drafted_incidents
 // (DB-backed, writable, lives in the same snapshots.db the history
-// endpoints already use). Since 21-Manual Incident Authoring UI,
-// drafted_incidents itself now holds two kinds of rows — auto-detected
-// and admin-authored — both already carry a real `source` column, so no
-// extra mapping is needed here beyond the file's own default. Every
-// incidents.json entry gets source: 'manual' stamped on if it doesn't
-// already have one, since every existing entry predates that field and
-// defaulting here means the file itself never needed a one-time
-// migration. See 16-Next-Round Functionality.md and 21-Manual Incident
-// Authoring UI.md.
+// endpoints already use). drafted_incidents itself holds two kinds of
+// rows — auto-detected and admin-authored — both already carry a real
+// `source` column, so no extra mapping is needed here beyond the
+// file's own default. Every incidents.json entry gets source: 'manual'
+// stamped on if it doesn't already have one, since every existing
+// entry predates that field and defaulting here means the file itself
+// never needed a one-time migration.
 app.get('/incidents', async (_req, res) => {
   try {
     const raw = await readFile(INCIDENTS_FILE, 'utf-8')
@@ -135,8 +133,8 @@ app.get('/incidents', async (_req, res) => {
     const fromDb = getAllDraftedIncidents()
     res.json([...fromFile, ...fromDb])
   } catch (error) {
-    // 22-Security Hardening — every route below used to send String(error)
-    // straight back to the client. Not a credential leak on its own, but
+    // Every route below used to send String(error) straight back to
+    // the client. Not a credential leak on its own, but
     // unnecessary internal detail (stack traces, file paths, upstream
     // error text) handed to any public caller. Logged server-side where
     // it's actually useful; the client only gets a generic message.
@@ -145,18 +143,17 @@ app.get('/incidents', async (_req, res) => {
   }
 })
 
-// ── Admin: manual incident authoring (21-Manual Incident Authoring UI) ──
+// ── Admin: manual incident authoring ─────────────────────────────────
 // Everything under /admin is expected to sit behind a Cloudflare Access
 // policy scoped to this exact path prefix — Access validates the
 // visitor's identity at Cloudflare's edge before the request ever
 // reaches this container, the same way the rest of this deployment has
-// no inbound ports open at all. IMPORTANT, honestly stated: as of this
-// Phase 1 build, this code performs zero independent verification of
-// its own — there is no server-side check that a request actually came
-// through an authenticated Access session. That defense-in-depth layer
-// (validating the Cf-Access-Jwt-Assertion header directly) is explicitly
-// deferred to Phase 2, sequenced after 22-Security Hardening's
-// threat-model pass, not an oversight here. Do not point this route at
+// no inbound ports open at all. IMPORTANT, honestly stated: this code
+// currently performs zero independent verification of its own — there
+// is no server-side check that a request actually came through an
+// authenticated Access session. That defense-in-depth layer (validating
+// the Cf-Access-Jwt-Assertion header directly) is a deliberately
+// deferred follow-up, not an oversight here. Do not point this route at
 // the public internet without the Access policy actually configured and
 // verified first.
 app.post('/admin/incidents', express.json(), (req, res) => {
@@ -250,9 +247,10 @@ app.get('/history/:serviceId/recent', (req, res) => {
 // 60s polling via useServiceStatus (see client/src/hooks/useLiveNudge.ts),
 // this route just tells already-connected clients "something changed,
 // refetch now" sooner than their next scheduled poll. No state is ever
-// pushed through this connection, only a bare signal — see
-// 17-Frontend Polish and Realtime.md for why the hybrid version was
-// chosen over relocating the whole aggregation facade server-side.
+// pushed through this connection, only a bare signal — the hybrid
+// approach was chosen over relocating the whole aggregation facade
+// server-side, since a bare signal is enough to get the same effect at
+// a fraction of the moving parts.
 app.get('/events', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -275,7 +273,7 @@ app.get('/events', (req, res) => {
   })
 })
 
-// ── Embeddable status badge (20-Embeddable Status Badge) ────────────
+// ── Embeddable status badge ──────────────────────────────────────────
 // Public, unauthenticated. Deliberately NOT computed live per request —
 // reads whatever nudge.ts's 20s loop last cached. Colors match
 // StatusBadge.tsx's green/yellow/red/gray mapping exactly. Hand-rolled
@@ -318,13 +316,13 @@ app.get('/badge.svg', (_req, res) => {
 
 // ── Prometheus proxy ──────────────────────────────────────────────
 // Restricted to the exact two endpoints prometheus.ts ever calls
-// (/api/v1/query, /api/v1/query_range) — added 22-Security Hardening.
-// Before this, /prometheus/* forwarded ANY path to the real Prometheus
-// instance with no restriction at all: a genuinely serious gap, not a
-// theoretical one, since this app's actual usage only ever needs two
-// read endpoints but nothing enforced that. Blocks admin/config/reload
-// endpoints entirely and any other Prometheus API surface this app has
-// no legitimate reason to expose to the public internet.
+// (/api/v1/query, /api/v1/query_range). Before this, /prometheus/*
+// forwarded ANY path to the real Prometheus instance with no
+// restriction at all: a genuinely serious gap, not a theoretical one,
+// since this app's actual usage only ever needs two read endpoints but
+// nothing enforced that. Blocks admin/config/reload endpoints entirely
+// and any other Prometheus API surface this app has no legitimate
+// reason to expose to the public internet.
 //
 // Deliberately NOT validating the *content* of the `query` parameter
 // itself yet — an allowed path can still carry an arbitrary PromQL
@@ -332,7 +330,7 @@ app.get('/badge.svg', (_req, res) => {
 // expensive query as a denial-of-service vector. Path-level restriction
 // closes the larger hole (arbitrary API surface, not just arbitrary
 // queries) cheaply; query-content validation is a real further
-// refinement, not done in this pass — see 22-Security Hardening.md.
+// refinement, not done here.
 const PROMETHEUS_PATH_ALLOWLIST = [/^\/api\/v1\/query$/, /^\/api\/v1\/query_range$/]
 
 function isAllowedPrometheusRequest(req: express.Request): boolean {
@@ -392,8 +390,8 @@ app.use(
 )
 
 // ── Zabbix proxy ───────────────────────────────────────────────────
-// Restricted to method: 'host.get' — added 22-Security Hardening. Before
-// this, req.body.method was forwarded to Zabbix's JSON-RPC API
+// Restricted to method: 'host.get'. Before this, req.body.method was
+// forwarded to Zabbix's JSON-RPC API
 // completely unchecked: any caller could invoke any Zabbix API method
 // with this route's real bearer token attached, not just the read-only
 // host status check this app actually needs. host.get is the only

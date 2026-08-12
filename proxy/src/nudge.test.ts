@@ -14,12 +14,11 @@ interface ZabbixFixture {
 }
 
 // Fixtures live at the repo root, shared with the client's own parity
-// tests — see 04-Services Index's "On duplicating this file's logic
-// into the proxy" and 18-Automated Test Coverage's Phase 2 plan. Same
-// input/output pairs, read independently by both suites; if either
-// copy of the logic ever drifts, this test (or the client's) fails
-// immediately instead of shipping a silent disagreement — the direct
-// fix for how the real 07-24-2026 nut_exporter/nut bug went unnoticed.
+// tests. Same input/output pairs, read independently by both suites;
+// if either copy of the logic ever drifts, this test (or the client's)
+// fails immediately instead of shipping a silent disagreement — the
+// direct fix for how a real past bug involving mismatched metric job
+// names went unnoticed for a while.
 const overallStatusFixtures = JSON.parse(
   readFileSync(path.join(__dirname, '../../fixtures/parity/overall-status.json'), 'utf-8')
 ) as OverallStatusFixture[]

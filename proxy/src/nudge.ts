@@ -83,11 +83,10 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
 
 
 // Exported as a deliberate, narrow testability exception — same
-// reasoning as client/src/services/zabbix.ts's deriveAvailability (see
-// 18-Automated Test Coverage). This is the proxy-side copy that
-// 20-Embeddable Status Badge introduced; see nudge.test.ts and
-// fixtures/parity/overall-status.json for the parity check against the
-// client's copy.
+// reasoning as client/src/services/zabbix.ts's deriveAvailability. This
+// is the proxy-side copy that the embeddable status badge relies on;
+// see nudge.test.ts and fixtures/parity/overall-status.json for the
+// parity check against the client's copy.
 export function deriveOverallStatus(statuses: Status[]): Status {
   if (statuses.length === 0) return 'unknown'
   if (statuses.some(s => s === 'outage')) return 'outage'
@@ -214,13 +213,12 @@ export type SignatureCheckResult = 'initial' | 'changed' | 'unchanged'
 
 // Pure comparison logic, extracted from checkForChanges specifically so
 // it's testable without mocking fetch or any of the three data-source
-// checks — see 18-Automated Test Coverage.md's Phase 2 plan, the last
-// item on that list. 'initial' is its own case rather than folded into
-// 'changed' because the very first tick after a proxy restart has
-// nothing real to compare against — treating a null baseline as "the
-// status changed" would fire a spurious nudge to every connected client
-// the moment the proxy comes back up, before anything has actually
-// changed at all.
+// checks. 'initial' is its own case rather than folded into 'changed'
+// because the very first tick after a proxy restart has nothing real
+// to compare against — treating a null baseline as "the status
+// changed" would fire a spurious nudge to every connected client the
+// moment the proxy comes back up, before anything has actually changed
+// at all.
 export function compareSignature(
   previous: string | null,
   current: string

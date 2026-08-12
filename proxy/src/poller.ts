@@ -12,7 +12,7 @@ import {
 // Proxmox Nodes and Power, which fall back on Prometheus's own real
 // scrape data even if this poller's granularity misses something),
 // light enough that it's a non-issue against Proxmox/Zabbix for a
-// homelab of this size. See 14-Full-Category History.md.
+// homelab of this size.
 const POLL_INTERVAL_MS = 15 * 60 * 1000
 
 // 2 consecutive readings at the poller's own 15-minute cadence — roughly
@@ -20,15 +20,14 @@ const POLL_INTERVAL_MS = 15 * 60 * 1000
 // incident. Chosen specifically to avoid drafting an incident for a
 // single blip (one bad reading that recovers by the next tick) while
 // still catching a genuinely sustained problem within half an hour.
-// See 16-Next-Round Functionality.md's own reasoning for this number.
 export const THRESHOLD_READINGS = 2
 
 export type ThresholdDecision = 'draft' | 'resolve' | 'none'
 
 // Pure decision logic, extracted from checkIncidentThreshold specifically
-// so it's testable without a real database — see 18-Automated Test
-// Coverage.md's Phase 2 plan. Takes exactly the two facts the decision
-// actually depends on (the last N readings, and whether an incident is
+// so it's testable without a real database. Takes exactly the two facts
+// the decision actually depends on (the last N readings, and whether an
+// incident is
 // already active) rather than the serviceId/timestamp/DB access the
 // original inline version needed, so a test can call this directly with
 // plain arrays and booleans, no database involved at all.
@@ -110,9 +109,9 @@ const ZABBIX_SERVER_NAME = 'Zabbix server'
 
 // Mirrors the (fixed) derivation logic in the client's zabbix.ts exactly
 // — same interface lookup, same available-code mapping. Duplicated
-// rather than shared, per the scope doc's decision: the amount of logic
-// is small, and building shared-package tooling across two separate npm
-// projects for one small function would be disproportionate.
+// rather than shared: the amount of logic is small, and building
+// shared-package tooling across two separate npm projects for one small
+// function would be disproportionate.
 function deriveZabbixStatus(interfaces: ZabbixInterface[]): string {
   const agentInterface = interfaces.find(i => i.type === '1')
   if (!agentInterface) return 'unknown'

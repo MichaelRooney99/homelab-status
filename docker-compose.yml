@@ -2,10 +2,9 @@ services:
   client:
     build:
       # Was `.` — the client app now lives in its own subfolder, matching
-      # proxy's already-correct sibling layout. See
-      # 26-Client Folder Restructure.md for why this moved (a real
-      # structural mismatch between every scope doc and the actual repo,
-      # found via a CI workflow failure, not a cosmetic preference).
+      # proxy's sibling layout below. Keeps the two build contexts
+      # symmetric and scoped independently, so neither service's build
+      # can accidentally pull in the other's files.
       context: ./client
       dockerfile: Dockerfile
     ports:

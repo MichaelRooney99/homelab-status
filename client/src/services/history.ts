@@ -23,10 +23,10 @@ const HISTORY_DAYS = 90
 // stable regardless of when the query fires.
 //
 // Exported as a deliberate, narrow exception to this file's usual
-// export surface (see 04-Services Index) — this exact function is what
-// broke in the real 07-24-2026 day-boundary bug, so it's exactly the
-// kind of pure, high-bug-risk logic 18-Automated Test Coverage.md calls
-// out as worth testing directly rather than only through fetchUptimeHistory.
+// pattern of keeping helpers private — this exact function is what
+// broke in a real day-boundary bug, so it's exactly the kind of pure,
+// high-bug-risk logic worth testing directly rather than only through
+// fetchUptimeHistory.
 export function utcMidnightSeconds(date: Date): number {
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / 1000
 }

@@ -10,7 +10,7 @@
     no router — adding one for exactly one admin page would be a real new
     dependency for a single screen. This matches the portfolio site's own
     established preference for plain HTML/JS over a framework wherever
-    one isn't earned. See 21-Manual Incident Authoring UI.md.
+    one isn't earned.
 
     Auth: this page assumes Cloudflare Access is gating the /admin/*
     path prefix at the edge. There is no login form here on purpose —
@@ -202,8 +202,7 @@
         });
 
         if (res.status === 404) {
-          // Expected, not a bug — see 21-Manual Incident Authoring UI.md's
-          // stated scope boundary. Incidents seeded from incidents.json
+          // Expected, not a bug. Incidents seeded from incidents.json
           // predate the admin tool and were never given a database row
           // this route can find; only incidents created through this UI
           // (or auto-drafted ones) can be updated here. A bare 404 with

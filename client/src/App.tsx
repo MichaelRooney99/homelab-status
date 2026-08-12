@@ -151,36 +151,27 @@ export default function App() {
           </div>
         </header>
 {/*
-  25-Incident List Layout — final version.
-
-  This is the block that goes INSIDE the existing outer container div:
-    <div className="max-w-3xl md:max-w-4xl lg:max-w-6xl mx-auto px-4 py-12 space-y-8">
-  That container line is NOT repeated here — it already exists further up
-  App.tsx, right after the opening <div className="min-h-screen ..."> wrapper.
-  Do not duplicate it.
-
-  Two real columns at md (768px) and up:
+  Two-column layout at md (768px) and up:
     - Left: OverallHealth (full-width, above the split) + main content
       column (category filter chip + every category section)
     - Right: one aside column, DaysSinceIncident and IncidentList
-      stacked together as a single unit — NOT split into their own
-      separate sub-columns.
+      stacked together as a single unit — not split into separate
+      sub-columns.
 
-  Below md: single stacked column, aside content appears ABOVE the
-  category sections (matches today's original top-to-bottom order) —
-  achieved via md:order-2/md:order-1, not by moving the aside's markup
-  position, so CommandPalette's incident scrollIntoView still targets
-  the same DOM element it always has, just a different final scroll
-  position once this ships.
+  Below md: single stacked column, with the aside content appearing
+  above the category sections. That order comes from md:order-2/
+  md:order-1 rather than moving the aside's markup position, so
+  CommandPalette's incident scrollIntoView still targets the same DOM
+  element regardless of layout — only the final scroll position
+  changes.
 
   Aside width: 280px at md (tablet), widening to 340px at lg (desktop)
-  via the second grid-cols/gap override — a tablet gets a tighter aside
-  than full desktop rather than one fixed width for every screen above
-  the breakpoint.
+  via the second grid-cols/gap override — a tablet gets a tighter
+  aside than full desktop rather than one fixed width everywhere.
 
   items-start (not stretch) keeps the aside from being forced to match
-  the main column's height. Sticky positioning deliberately deferred,
-  per 25-'s own recommendation — plain two-column layout first.
+  the main column's height. Sticky positioning intentionally not used
+  here — plain two-column layout only.
 */}
 
         <OverallHealth

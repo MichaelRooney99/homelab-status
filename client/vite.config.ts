@@ -9,7 +9,7 @@ export default defineConfig({
   ],
   // Vitest reads this same config directly — no separate vitest.config.ts
   // needed client-side, unlike the proxy (which has no Vite to share
-  // with). See 18-Automated Test Coverage.md.
+  // with).
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],

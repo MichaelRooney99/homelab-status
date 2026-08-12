@@ -38,8 +38,7 @@ try {
 // it, full stop. This table reuses the same named volume snapshots.db
 // already has, which is already writable and already survives
 // redeploys — no new infrastructure, just a second table in
-// infrastructure that already exists. See 16-Next-Round Functionality.md
-// for the full reasoning.
+// infrastructure that already exists.
 db.exec(`
   CREATE TABLE IF NOT EXISTS drafted_incidents (
     id         TEXT PRIMARY KEY,
@@ -51,7 +50,8 @@ db.exec(`
   )
 `)
 
-// 21-Manual Incident Authoring UI (08-2026) needed three more columns:
+// The admin incident-authoring feature (added 08-2026) needed three
+// more columns:
 // a real `source` flag instead of assuming every row is 'auto', a real
 // `title` since manual incidents can't use the auto-only "Sustained
 // outage detected: <service_id>" template, and `affected_services` as a
@@ -103,12 +103,12 @@ interface SnapshotRow {
   status: string
 }
 
-// Severity ranking for the "worst status of the day" rollup, decided in
-// 14-Full-Category History.md — outage is worst, operational is best.
-// 'unknown' readings are deliberately excluded from this ranking rather
-// than treated as a severity level: an unknown reading doesn't tell us
-// the service was degraded, it tells us we don't know, which isn't the
-// same thing as a bad reading and shouldn't count as one.
+// Severity ranking for the "worst status of the day" rollup — outage
+// is worst, operational is best. 'unknown' readings are deliberately
+// excluded from this ranking rather than treated as a severity level:
+// an unknown reading doesn't tell us the service was degraded, it
+// tells us we don't know, which isn't the same thing as a bad reading
+// and shouldn't count as one.
 const SEVERITY: Record<string, number> = {
   outage: 3,
   degraded: 2,
@@ -229,9 +229,9 @@ interface DraftedIncidentRow {
 // are left alone; a new outage after resolution correctly starts a new
 // incident.
 //
-// Filtered to source = 'auto' explicitly (added alongside 21-Manual
-// Incident Authoring UI) — without this, an admin-authored manual
-// incident that happens to reference the same service_id would look
+// Filtered to source = 'auto' explicitly — without this, an
+// admin-authored manual incident that happens to reference the same
+// service_id would look
 // like an already-active incident to the threshold checker, silently
 // suppressing a real auto-draft that should have fired. Manual
 // incidents and the auto-threshold system need to stay invisible to
@@ -276,7 +276,7 @@ export function resolveDraftedIncident(id: string, timestamp: number): void {
   ).run(timestamp, JSON.stringify(updates), id)
 }
 
-// ── Manual incidents (21-Manual Incident Authoring UI) ────────────────
+// ── Manual incidents ────────────────────────────────────────────────
 // These three functions are the write path the /admin/incidents routes
 // call. Deliberately separate from createDraftedIncident/
 // resolveDraftedIncident above rather than generalizing those — the
