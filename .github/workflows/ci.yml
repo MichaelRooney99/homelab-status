@@ -1,12 +1,17 @@
-name: CI
+name: CI/CD
 
-# Runs on every push and every PR into main — 23-GitHub Actions CI/CD's
-# Phase 1. Deliberately CI only, not CD: GitHub's hosted runners can't
-# reach the homelab at all (the Cloudflare tunnel is outbound-only by
-# design), so an actual deploy trigger is a separate, bigger decision,
-# not built here. Everything below needs nothing but a checked-out copy
-# of the repo — zero secrets in GitHub's Secrets store, genuinely safe
-# by construction, not just carefully configured to be safe.
+# Runs on every push and every PR into main. CI (the client/proxy jobs
+# below) runs for both pushes and PRs — everything they check needs
+# nothing but a checked-out copy of the repo, zero secrets in GitHub's
+# Secrets store, genuinely safe by construction. CD (trigger-deploy,
+# at the bottom) is real now, but scoped narrowly on purpose: it only
+# fires on an actual push to main, only after both CI jobs pass, and
+# it doesn't deploy anything itself — it calls a Cloudflare
+# Access–gated webhook that triggers ansible-playbook locally on
+# infrastructure this project already trusts. GitHub's hosted runners
+# still can't reach the homelab directly (the Cloudflare tunnel stays
+# outbound-only, unchanged) — CD works around that by triggering,
+# not by reaching in itself.
 on:
   push:
     branches: [main]
@@ -16,11 +21,8 @@ on:
 jobs:
   client:
     runs-on: ubuntu-latest
-    # 26-Client Folder Restructure.md — the client app now genuinely
-    # lives in client/, so this working-directory override is correct
-    # again. It was removed in 23-'s original build specifically
-    # because it wasn't true yet at that point; restored here once it
-    # actually is.
+    # The client app lives in its own client/ subfolder, not the repo
+    # root, so every step below needs to run relative to that path.
     defaults:
       run:
         working-directory: client
@@ -52,8 +54,39 @@ jobs:
           cache: npm
           cache-dependency-path: proxy/package-lock.json
       - run: npm ci
-      # passWithNoTests in vitest.config.ts means this succeeds cleanly
-      # today (18-'s Phase 2 hasn't been built yet) and will actually
-      # run real tests the moment that phase lands, with no workflow
+      # passWithNoTests in vitest.config.ts means this step succeeds
+      # cleanly even before any proxy-side tests exist, and will pick
+      # up real tests automatically as they're added — no workflow
       # change needed here.
       - run: npm test
+
+  trigger-deploy:
+    # `needs` alone already means this job only runs if BOTH client and
+    # proxy succeeded — GitHub Actions skips a job entirely when
+    # anything it needs failed, no separate check required for that
+    # part. The `if` below adds the other real constraint: only an
+    # actual push to main should ever trigger a deploy, never a PR
+    # build (which runs the exact same CI jobs, on purpose, but has no
+    # business redeploying anything).
+    needs: [client, proxy]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger the deploy webhook
+        # Cloudflare Access sits in front of this URL, gated by a
+        # service-token policy (not the email-based Allow policy
+        # /admin uses — GitHub Actions can't do an interactive login).
+        # The two CF-Access-* headers below are exactly what
+        # authenticates this request at Cloudflare's edge; the
+        # receiver itself does zero independent auth, same pattern as
+        # every other Access-gated route this project has built.
+        # `-f` makes curl exit non-zero on an HTTP error response
+        # (e.g. 409 if a deploy is already running, or 403 if the
+        # service token is wrong), so a failed trigger shows up as a
+        # real failed job here, not a silently-ignored curl call.
+        run: |
+          curl -sf -X POST "${{ secrets.DEPLOY_WEBHOOK_URL }}" \
+            -H "CF-Access-Client-Id: ${{ secrets.CF_ACCESS_CLIENT_ID }}" \
+            -H "CF-Access-Client-Secret: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"sha\":\"${{ github.sha }}\",\"ref\":\"${{ github.ref }}\"}"
