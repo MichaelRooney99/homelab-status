@@ -24,6 +24,9 @@ export default function MiniLineChart({ data }: MiniLineChartProps) {
   const values = data.map(d => d.value)
   const minValue = Math.min(...values)
   const maxValue = Math.max(...values)
+  // `|| 1` guards a flat line (every reading identical, e.g. a service
+  // that's had the same response time all day) — without it, valueRange
+  // would be 0 and every y below would divide by zero.
   const valueRange = maxValue - minValue || 1
 
   const timestamps = data.map(d => d.timestamp)
@@ -31,6 +34,15 @@ export default function MiniLineChart({ data }: MiniLineChartProps) {
   const maxTime = Math.max(...timestamps)
   const timeRange = maxTime - minTime || 1
 
+  // Normalizes each point into the SVG's own coordinate space (0,0 at
+  // top-left, WIDTH/HEIGHT at bottom-right). x is straightforward —
+  // earlier timestamps map to smaller x, later ones to larger x. y needs
+  // the extra `HEIGHT - PADDING - (...)` inversion because SVG's y-axis
+  // grows downward, the opposite of a normal chart: without the
+  // inversion, the highest value in the dataset would plot at the
+  // bottom and the lowest at the top. This flips it back to the
+  // standard convention anyone reading a line chart expects — larger
+  // values sit higher, smaller values sit lower.
   const points = data
     .map(d => {
       const x = PADDING + ((d.timestamp - minTime) / timeRange) * (WIDTH - PADDING * 2)

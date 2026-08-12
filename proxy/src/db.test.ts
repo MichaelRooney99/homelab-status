@@ -34,6 +34,8 @@ function daysAgoDateStr(daysAgo: number): string {
 }
 
 describe('getDayBucketedHistory', () => {
+  // Establishing baseline behavior first — a single reading on a single
+  // day should map to that exact day, nothing fancier yet.
   it('maps a single operational reading to that day', () => {
     const serviceId = uniqueServiceId()
     recordSnapshot(serviceId, 'operational', null, todayUtcMidnight())
@@ -52,6 +54,10 @@ describe('getDayBucketedHistory', () => {
     expect(today?.status).toBe('outage')
   })
 
+  // Confirms the function distinguishes "this service was fine
+  // yesterday, we just have no data for today" from "this service is
+  // currently down" — two very different situations that a lazy
+  // implementation could easily conflate into the same status.
   it('marks a day with no snapshot as no-data, not a guess', () => {
     const serviceId = uniqueServiceId()
     recordSnapshot(serviceId, 'operational', null, todayUtcMidnight() - 86400)
@@ -63,6 +69,9 @@ describe('getDayBucketedHistory', () => {
     expect(yesterday?.status).toBe('operational')
   })
 
+  // A pure shape/contract test, independent of any status logic — the
+  // function promises exactly 90 days back in chronological order every
+  // time, even for a service with zero recorded snapshots at all.
   it('always returns exactly 90 days, oldest first', () => {
     const serviceId = uniqueServiceId()
     const days = getDayBucketedHistory(serviceId)
@@ -84,6 +93,9 @@ describe('getDayBucketedHistory', () => {
     expect(today?.status).toBe('outage')
   })
 
+  // One level down from the test above — confirms the actual ranking
+  // order (outage worse than degraded worse than operational), not just
+  // that "the bad one wins" in a two-value case.
   it('ranks outage worse than degraded worse than operational', () => {
     const serviceId = uniqueServiceId()
     const base = todayUtcMidnight()
@@ -109,6 +121,10 @@ describe('getDayBucketedHistory', () => {
     expect(today?.status).toBe('no-data')
   })
 
+  // The important companion to the test above — excluding 'unknown'
+  // from the ranking must not mean excluding the entire day's other
+  // real readings. An 'unknown' sitting alongside a genuine outage on
+  // the same day should never mask that outage.
   it('an unknown reading does not hide a real outage recorded the same day', () => {
     const serviceId = uniqueServiceId()
     const base = todayUtcMidnight()
@@ -120,6 +136,9 @@ describe('getDayBucketedHistory', () => {
     expect(today?.status).toBe('outage')
   })
 
+  // Confirms the day-bucketing boundary itself — a reading recorded on
+  // one real calendar day must never leak into an adjacent day's
+  // bucket, in either direction.
   it('keeps readings on different real dates in separate day buckets', () => {
     const serviceId = uniqueServiceId()
     recordSnapshot(serviceId, 'outage', null, todayUtcMidnight())

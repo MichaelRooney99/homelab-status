@@ -16,15 +16,22 @@ const fixtures = JSON.parse(
 ) as ZabbixFixture[]
 
 describe('deriveAvailability', () => {
+  // Same table-driven pattern as index.test.ts — one generated test per
+  // fixture entry, test name built from the actual input/output pair.
   for (const { interfaces, expected } of fixtures) {
     it(`derives ${expected} from ${JSON.stringify(interfaces)}`, () => {
       expect(deriveAvailability(interfaces)).toBe(expected)
     })
   }
 
-  // Named separately from the fixture loop specifically to call out why
-  // it matters — guards against exactly the shape of the real
-  // 07-24-2026 bug, a second interface overriding the real agent one.
+  // Named separately from the fixture loop above specifically to call
+  // out why it matters, rather than letting it blend into a generic
+  // fixture case: guards against exactly the shape of a real past bug,
+  // where a second interface in the array silently overrode the real
+  // agent one. A generic "does the function work" test wouldn't
+  // necessarily catch a regression here — this one deliberately puts a
+  // decoy interface first in the array to prove the lookup is by type,
+  // not by array position.
   it('reads the agent interface specifically, not just the first one in the array', () => {
     const result = deriveAvailability([
       { type: '2', available: '2' },

@@ -33,6 +33,16 @@ function toServices(statuses: Status[]): ServiceStatus[] {
 }
 
 describe('deriveOverallStatus', () => {
+  // Table-driven testing: rather than hand-writing one it() block per
+  // case, loop over the fixture data and generate one test per entry.
+  // The test's own name is built from the input/output pair itself
+  // (e.g. "[operational, outage] -> outage"), so a failure immediately
+  // says which specific case broke without needing to open the fixture
+  // file to translate a generic test name back into real inputs. Adding
+  // a new case later means adding one line to the shared JSON fixture —
+  // no new test code required, and the client and proxy's copies of
+  // this logic both automatically pick up the new case since they read
+  // the same file.
   for (const { statuses, expected } of fixtures) {
     it(`[${statuses.join(', ') || 'empty'}] -> ${expected}`, () => {
       expect(deriveOverallStatus(toServices(statuses))).toBe(expected)

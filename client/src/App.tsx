@@ -16,6 +16,13 @@ import ServiceDetailModal from './components/ServiceDetailModal'
 import CommandPalette from './components/CommandPalette'
 import type { ServiceStatus, Status, UptimeDay } from './services/types'
 
+// Fixed display order, not alphabetical and not source order — mirrors
+// the real order infrastructure gets checked in practice (compute
+// first, then the API layer in front of it, then power, then network,
+// then everything else). A category not in this list still renders —
+// grouped into a trailing "Other" bucket below — rather than silently
+// dropped, so a new category showing up in the data can never
+// disappear from the page just because nobody remembered to add it here.
 const CATEGORY_ORDER = [
   'Proxmox Nodes',
   'Proxmox API',
@@ -35,6 +42,8 @@ function groupByCategory(services: ServiceStatus[]): Map<string, ServiceStatus[]
     }
   }
 
+  // Anything not in CATEGORY_ORDER above lands here instead of being
+  // silently excluded from the page.
   const uncategorized = services.filter(
     s => !CATEGORY_ORDER.includes(s.category)
   )
@@ -45,6 +54,16 @@ function groupByCategory(services: ServiceStatus[]): Map<string, ServiceStatus[]
   return map
 }
 
+// Fallback for the two categories (Proxmox API, Zabbix) that have no
+// Prometheus-backed 90-day history — their real history comes from the
+// proxy's own snapshot poller instead, which only has data going back to
+// whenever it first started recording. Rather than showing an empty
+// uptime bar for those services until 90 days of real data accumulates,
+// this fabricates a 90-day array where every day except today is
+// 'no-data' and today reflects whatever the service's live status
+// actually is right now. useUptimeHistory returns real data once it
+// exists; this only fires as the placeholder before that, via the
+// `realHistory ?? generatePlaceholderDays(...)` fallback below.
 function generatePlaceholderDays(currentStatus: Status): UptimeDay[] {
   const days: UptimeDay[] = []
   const today = new Date()
@@ -211,6 +230,16 @@ export default function App() {
                 </h2>
                 <div className="rounded-lg border border-capstone-border bg-capstone-bg-raised px-6">
                   {services.map(service => {
+                    // realHistory is undefined until useUptimeHistory has
+                    // real data for this service (see generatePlaceholderDays
+                    // above for why). uptimePercent follows the same split:
+                    // with real history, the actual calculated percentage;
+                    // without it, 100 if the service is currently operational
+                    // (an optimistic default — "no evidence of a problem"
+                    // rather than "unknown, so assume nothing"), otherwise
+                    // undefined so the UI can show "no data" rather than a
+                    // misleading number for a service that isn't currently
+                    // healthy and has no history to back up any percentage.
                     const realHistory = history[service.id]
                     const days = realHistory ?? generatePlaceholderDays(service.status)
                     const uptimePercent = realHistory
