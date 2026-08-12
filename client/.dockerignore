@@ -7,7 +7,6 @@ README.md
 # Everything proxy-related used to need excluding here on purpose — this
 # build context used to be the repo root, which meant proxy/ was
 # genuinely reachable and had to be kept out by hand. Now that the build
-# context is scoped to client/ specifically (see docker-compose.yml,
-# 26-Client Folder Restructure.md), proxy/ was never part of this
+# context is scoped to client/ specifically, proxy/ was never part of this
 # context to begin with — nothing left to exclude, this file just got
 # simpler as a real side effect of the restructure, not busywork.
