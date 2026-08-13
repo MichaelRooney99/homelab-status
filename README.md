@@ -162,7 +162,7 @@ npm run dev
 ```
 
 The client's dev-mode fallback points at `http://localhost:3001` for the proxy and `http://10.10.10.105:9090` for Prometheus directly — both are LAN-only addresses from the original deployment and won't resolve outside that network. Point `VITE_PROXY_URL` and `VITE_PROMETHEUS_URL` in `client/.env` at your own monitoring stack, or expect the adapters to fail (which they will — cleanly, since every adapter fetch is wrapped in `Promise.allSettled`).
-
+ 
 ---
 
 ## Deployment
