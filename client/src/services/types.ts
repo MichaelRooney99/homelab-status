@@ -1,6 +1,5 @@
 //normalizes and shapes the data from the status page api (prometheus, grafana, NUT, Proxmox, Zabbix) into a format that is easier to work with in the app.
 
-
 export type Status = 'operational' | 'degraded' | 'outage' | 'unknown' //up, sub-optimal, maintenance, unknown
 
 export interface ServiceStatus {
@@ -41,7 +40,7 @@ export interface StatusPage {
   lastUpdated: string
 }
 
-//need something to hold "history" of the status for each day, so we can show a graph of the uptime over time.
+//need something to hold "history" of the status for each day, so I can show a graph of the uptime over time.
 //  This will be used to show the uptime percentage for the last 90 days, and also to show a graph of the uptime over time.
 export type DayStatus = 'operational' | 'degraded' | 'outage' | 'unknown' | 'no-data'
 

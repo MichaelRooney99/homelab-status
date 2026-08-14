@@ -3,13 +3,10 @@ import type { Response } from 'express'
 // How often this checks for a status change worth nudging clients about
 // — deliberately its own interval, NOT poller.ts's existing 15-minute
 // tick. That interval is right for "how much 90-day history granularity
-// do we need," but reusing it literally for the nudge signal (as 17-'s
-// text loosely suggests — "the poller already ticks independently,
-// extend it") would mean nudges arrive up to 15 minutes late. That
+// do we need," but reusing it literally for the nudge signal
+//  would mean nudges arrive up to 15 minutes late. That
 // would make Proxmox API / Zabbix updates *less* responsive than the
-// 60-second client polling this feature exists to improve on — worth
-// naming as a deliberate departure from the doc's original framing,
-// not an oversight.
+// 60-second client polling this feature exists to improve on.
 const NUDGE_CHECK_INTERVAL_MS = 20 * 1000
 
 // Cloudflare's edge proxy kills an idle connection that's gone quiet for

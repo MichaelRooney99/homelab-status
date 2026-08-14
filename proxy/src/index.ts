@@ -114,7 +114,7 @@ app.get('/health', (_req, res) => {
 // — same reasoning as always, the file is tiny and requests are
 // infrequent. Merges two genuinely different storage locations at read
 // time: incidents.json (hand-edited, git-tracked, read-only inside this
-// container — the original historical seed) and drafted_incidents
+// container — I will likely use it for incidents that dont show up as incidents) and drafted_incidents
 // (DB-backed, writable, lives in the same snapshots.db the history
 // endpoints already use). drafted_incidents itself holds two kinds of
 // rows — auto-detected and admin-authored — both already carry a real
