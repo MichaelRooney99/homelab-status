@@ -191,8 +191,7 @@ describe('deleteIncident', () => {
   })
 })
 
-// See 30-Incident Retirement.md for the full reasoning this implements.
-// Real limitation worth stating plainly rather than pretending around:
+
 // a force-resolved incident becomes eligible for deletion in the same
 // pruneOldIncidents() call that force-resolves it (both steps key off
 // the same created_at cutoff), which means there's no way to observe
@@ -223,8 +222,7 @@ describe('pruneOldIncidents', () => {
 
   // The real point of this test: an incident that's still unresolved
   // and past the retention window doesn't survive indefinitely just
-  // because nothing ever confirmed it was over — see 30-'s reasoning
-  // for why staying open forever isn't actually the safe default here.
+  // because nothing ever confirmed it was over
   it('force-resolves then deletes an unresolved incident older than the retention window', () => {
     const oldTimestamp = daysAgo(RETENTION_DAYS + 1)
     const id = createManualIncident('old unresolved', ['svc'], 'initial', oldTimestamp)
