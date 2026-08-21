@@ -370,6 +370,54 @@ export function getIncidentStatus(id: string): string | undefined {
   return row?.status
 }
 
+// Promotes a single incidents.json entry into a real database row —
+// the write path for the admin UI's "Promote" action (see
+// 28-Incidents.json Integration.md). Deliberately takes the entry's
+// full original shape rather than building a fresh incident from
+// scratch, and preserves its real createdAt/updatedAt exactly as
+// they were — not the promotion timestamp. That matters directly for
+// 30-'s retirement mechanisms: a promoted incident needs to join the
+// same 90-day-from-created_at lifecycle as everything else using its
+// true original age, not get a fresh clock just because promotion
+// happened today.
+//
+// Never writes back to incidents.json itself — the :ro mount stays
+// fully intact. The caller (index.ts) is responsible for returning a
+// manual-edit instruction so the original file entry gets removed by
+// hand, the same workflow the file has always used for every other
+// change to it.
+export function promoteFileIncident(entry: {
+  id: string
+  title: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  affectedServices: string[]
+  updates: Array<{ timestamp: string; message: string }>
+}): string {
+  const newId = `manual-${Math.floor(Date.now() / 1000)}-${Math.random().toString(36).slice(2, 8)}`
+  const createdAtSeconds = Math.floor(new Date(entry.createdAt).getTime() / 1000)
+  const updatedAtSeconds = Math.floor(new Date(entry.updatedAt).getTime() / 1000)
+  const primaryServiceId = entry.affectedServices[0] ?? 'unspecified'
+
+  db.prepare(
+    `INSERT INTO drafted_incidents
+       (id, service_id, status, created_at, updated_at, updates, source, title, affected_services)
+     VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?)`
+  ).run(
+    newId,
+    primaryServiceId,
+    entry.status,
+    createdAtSeconds,
+    updatedAtSeconds,
+    JSON.stringify(entry.updates),
+    entry.title,
+    JSON.stringify(entry.affectedServices)
+  )
+
+  return newId
+}
+
 // Manual, admin-triggered deletion — the /admin/incidents/:id DELETE
 // route's write path. Deliberately unguarded here at the db layer (no
 // "only if resolved" check) — that rule belongs to the caller, same
