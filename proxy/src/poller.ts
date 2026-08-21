@@ -1,6 +1,7 @@
 import {
   recordSnapshot,
   pruneOldSnapshots,
+  pruneOldIncidents,
   getLastStatuses,
   getActiveDraftedIncident,
   createDraftedIncident,
@@ -202,6 +203,7 @@ export function startPoller(port: string | number): void {
   const tick = async () => {
     await Promise.all([pollProxmox(port), pollZabbix(port)])
     pruneOldSnapshots()
+    pruneOldIncidents()
     console.log(`Snapshot poll completed at ${new Date().toISOString()}`)
   }
 
