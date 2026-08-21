@@ -13,6 +13,7 @@ import {
   updateIncidentStatus,
   deleteIncident,
   getIncidentStatus,
+  promoteFileIncident,
 } from './db'
 import { addNudgeClient, removeNudgeClient, startNudgeChecker, getCachedOverallStatus } from './nudge'
 
@@ -131,8 +132,15 @@ app.get('/incidents', async (_req, res) => {
     const fromFile = (JSON.parse(raw) as Array<Record<string, unknown>>).map(incident => ({
       source: 'manual',
       ...incident,
+      // Always 'file' regardless of anything in the raw JSON — there's
+      // no legitimate reason a hand-written entry would define its own
+      // origin. This is the proactive signal the admin UI needs to show
+      // a Promote action before an edit attempt, rather than reacting
+      // to a 404 the way the old PATCH-based check did (see 30-'s
+      // history for that original, more awkward pattern).
+      origin: 'file',
     }))
-    const fromDb = getAllDraftedIncidents()
+    const fromDb = getAllDraftedIncidents().map(incident => ({ ...incident, origin: 'db' }))
     res.json([...fromFile, ...fromDb])
   } catch (error) {
     // Every route below used to send String(error) straight back to
@@ -230,6 +238,49 @@ app.delete('/admin/incidents/:id', (req, res) => {
 
     deleteIncident(req.params.id)
     res.json({ ok: true })
+  } catch (error) {
+    // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
+  }
+})
+
+// Promotes a single incidents.json entry into a real, editable database
+// row (see 28-Incidents.json Integration.md). The :ro mount means this
+// route can never remove the original entry from the file itself — the
+// response instead carries the exact manual-edit instruction the admin
+// page surfaces, since removing the now-duplicated entry by hand and
+// redeploying is the same workflow this file has always used for every
+// other change to it.
+app.post('/admin/incidents/:id/promote', async (req, res) => {
+  try {
+    const raw = await readFile(INCIDENTS_FILE, 'utf-8')
+    const fileIncidents = JSON.parse(raw) as Array<{
+      id: string
+      title: string
+      status: string
+      createdAt: string
+      updatedAt: string
+      affectedServices: string[]
+      updates: Array<{ timestamp: string; message: string }>
+    }>
+
+    const entry = fileIncidents.find(incident => incident.id === req.params.id)
+
+    if (!entry) {
+      res.status(404).json({ error: 'No incidents.json entry found with that id' })
+      return
+    }
+
+    const newId = promoteFileIncident(entry)
+
+    res.status(201).json({
+      id: newId,
+      manualEditInstruction:
+        `Remove the entry with "id": "${entry.id}" from incidents.json and redeploy — ` +
+        `it's now duplicated as database-backed incident "${newId}", and will show twice ` +
+        `on the live page until the original file entry is removed by hand.`,
+    })
   } catch (error) {
     // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
     console.error('Request failed:', error)
