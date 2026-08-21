@@ -14,6 +14,7 @@ import {
   deleteIncident,
   getIncidentStatus,
   promoteFileIncident,
+  getPromotedIncidentId,
 } from './db'
 import { addNudgeClient, removeNudgeClient, startNudgeChecker, getCachedOverallStatus } from './nudge'
 
@@ -267,6 +268,26 @@ app.post('/admin/incidents/:id/promote', async (req, res) => {
 
     if (!entry) {
       res.status(404).json({ error: 'No incidents.json entry found with that id' })
+      return
+    }
+
+    // Checked before promoting, not after — the most likely real cause
+    // of a repeat request isn't someone trying to create a duplicate on
+    // purpose, it's forgetting the manual file-edit step and clicking
+    // Promote again. Pointing back at the row that already exists is
+    // more useful here than either silently creating a second
+    // duplicate or a bare rejection with no way forward.
+    const alreadyPromotedId = getPromotedIncidentId(entry.id)
+
+    if (alreadyPromotedId) {
+      res.status(200).json({
+        id: alreadyPromotedId,
+        alreadyPromoted: true,
+        manualEditInstruction:
+          `This entry was already promoted to database-backed incident "${alreadyPromotedId}". ` +
+          `If incidents.json still has the original entry with "id": "${entry.id}", remove it and redeploy — ` +
+          `it's likely just the file-edit step that got missed the first time.`,
+      })
       return
     }
 
