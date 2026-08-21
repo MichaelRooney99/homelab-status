@@ -371,12 +371,12 @@ export function getIncidentStatus(id: string): string | undefined {
 }
 
 // Promotes a single incidents.json entry into a real database row —
-// the write path for the admin UI's "Promote" action (see
-// 28-Incidents.json Integration.md). Deliberately takes the entry's
+// the write path for the admin UI's "Promote" action. Deliberately
+// takes the entry's
 // full original shape rather than building a fresh incident from
 // scratch, and preserves its real createdAt/updatedAt exactly as
 // they were — not the promotion timestamp. That matters directly for
-// 30-'s retirement mechanisms: a promoted incident needs to join the
+// how old incidents get pruned: a promoted incident needs to join the
 // same 90-day-from-created_at lifecycle as everything else using its
 // true original age, not get a fresh clock just because promotion
 // happened today.
@@ -432,7 +432,7 @@ export function deleteIncident(id: string): boolean {
 }
 
 // ── Incident retirement ─────────────────────────────────────────────
-// See 30-Incident Retirement.md for the full reasoning. Two real,
+// Two real,
 // independent mechanisms in one function, run together on every
 // poller tick alongside pruneOldSnapshots: force-resolving anything
 // still unresolved past the retention window, then deleting anything

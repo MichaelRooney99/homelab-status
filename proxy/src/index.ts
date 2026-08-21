@@ -136,8 +136,7 @@ app.get('/incidents', async (_req, res) => {
       // no legitimate reason a hand-written entry would define its own
       // origin. This is the proactive signal the admin UI needs to show
       // a Promote action before an edit attempt, rather than reacting
-      // to a 404 the way the old PATCH-based check did (see 30-'s
-      // history for that original, more awkward pattern).
+      // to a 404 the way the old PATCH-based check used to.
       origin: 'file',
     }))
     const fromDb = getAllDraftedIncidents().map(incident => ({ ...incident, origin: 'db' }))
@@ -216,10 +215,9 @@ app.patch('/admin/incidents/:id', express.json(), (req, res) => {
 })
 
 // Delete requires resolved status first — this isn't just a
-// data-integrity guard, it's a deliberate workflow discipline (see
-// 30-Incident Retirement.md): the admin UI always models a real
-// incident lifecycle, investigating → resolved → retired, never a
-// shortcut straight from active to gone. The 409 here is the actual
+// data-integrity guard, it's a deliberate workflow discipline: the
+// admin UI always models a real incident lifecycle, investigating →
+// resolved → retired, never a shortcut straight from active to gone. The 409 here is the actual
 // enforcement point; the admin page's own confirm() dialog is a UX
 // nicety on top, not the real guard.
 app.delete('/admin/incidents/:id', (req, res) => {
@@ -246,7 +244,7 @@ app.delete('/admin/incidents/:id', (req, res) => {
 })
 
 // Promotes a single incidents.json entry into a real, editable database
-// row (see 28-Incidents.json Integration.md). The :ro mount means this
+// row. The :ro mount means this
 // route can never remove the original entry from the file itself — the
 // response instead carries the exact manual-edit instruction the admin
 // page surfaces, since removing the now-duplicated entry by hand and

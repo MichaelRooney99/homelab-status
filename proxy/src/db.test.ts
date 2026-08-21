@@ -7,6 +7,8 @@ import {
   getIncidentStatus,
   deleteIncident,
   pruneOldIncidents,
+  promoteFileIncident,
+  getAllDraftedIncidents,
 } from './db'
 
 // Real node:sqlite instance, in-memory for the whole test run — see
@@ -238,5 +240,86 @@ describe('pruneOldIncidents', () => {
     pruneOldIncidents()
 
     expect(getIncidentStatus(id)).toBe('investigating')
+  })
+})
+
+// Real incidents.json entries are plain object literals here rather
+// than created through any exported function — there's nothing in
+// db.ts that constructs a file-shaped entry, since the file itself is
+// hand-edited, outside this module's control entirely.
+function fileEntry(overrides: Partial<{
+  id: string
+  title: string
+  status: string
+  createdAt: string
+  updatedAt: string
+  affectedServices: string[]
+  updates: Array<{ timestamp: string; message: string }>
+}> = {}) {
+  return {
+    id: 'file-entry-default',
+    title: 'A pre-existing incidents.json entry',
+    status: 'resolved',
+    createdAt: new Date(now() * 1000).toISOString(),
+    updatedAt: new Date(now() * 1000).toISOString(),
+    affectedServices: ['svc-ankhh'],
+    updates: [{ timestamp: new Date(now() * 1000).toISOString(), message: 'original message' }],
+    ...overrides,
+  }
+}
+
+describe('promoteFileIncident', () => {
+  it('creates a new database row with a real id, distinct from the file entry\'s own id', () => {
+    const newId = promoteFileIncident(fileEntry({ id: 'file-abc-123' }))
+    expect(newId).not.toBe('file-abc-123')
+    expect(getIncidentStatus(newId)).toBeDefined()
+  })
+
+  it('preserves the original status rather than resetting to investigating', () => {
+    const newId = promoteFileIncident(fileEntry({ status: 'resolved' }))
+    expect(getIncidentStatus(newId)).toBe('resolved')
+  })
+
+  // The real point of this test, tied directly to how old incidents
+  // get pruned: a promoted incident needs to join the same
+  // 90-days-from-created_at lifecycle at its TRUE original age, not
+  // get a fresh clock just because promotion happened today. Getting
+  // this wrong would mean an old incident silently immune to pruning
+  // right after promotion, the opposite of the intended behavior.
+  it('preserves the original createdAt exactly, not the promotion time', () => {
+    const oldCreatedAt = new Date(daysAgo(45) * 1000).toISOString()
+    const newId = promoteFileIncident(fileEntry({ createdAt: oldCreatedAt, updatedAt: oldCreatedAt }))
+
+    const promoted = getAllDraftedIncidents().find(incident => incident.id === newId)
+    expect(promoted?.createdAt).toBe(oldCreatedAt)
+  })
+
+  it('preserves the original updates array exactly', () => {
+    const updates = [
+      { timestamp: new Date(now() * 1000).toISOString(), message: 'first real update' },
+      { timestamp: new Date(now() * 1000).toISOString(), message: 'second real update' },
+    ]
+    const newId = promoteFileIncident(fileEntry({ updates }))
+
+    const promoted = getAllDraftedIncidents().find(incident => incident.id === newId)
+    expect(promoted?.updates).toEqual(updates)
+  })
+
+  it('preserves the original affectedServices array exactly', () => {
+    const newId = promoteFileIncident(fileEntry({ affectedServices: ['svc-a', 'svc-b'] }))
+
+    const promoted = getAllDraftedIncidents().find(incident => incident.id === newId)
+    expect(promoted?.affectedServices).toEqual(['svc-a', 'svc-b'])
+  })
+
+  it('never writes back to incidents.json — confirmed by the function\'s own signature having no file-write path at all', () => {
+    // Not a runtime-observable behavior — there is no file for this
+    // in-memory test to check against. This test exists to document
+    // the guarantee explicitly rather than leave it unstated: promotion
+    // creates a database row and returns an id, full stop. The :ro
+    // mount means writing to incidents.json was never structurally
+    // possible from inside this function to begin with.
+    const newId = promoteFileIncident(fileEntry())
+    expect(typeof newId).toBe('string')
   })
 })

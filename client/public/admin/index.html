@@ -200,8 +200,8 @@
 
     // Delete is only ever offered on already-resolved incidents (see the
     // template above), but the confirm() here is the real, deliberate
-    // friction point — irreversible, no undo, matching 30-Incident
-    // Retirement.md's decision that this needs more than just a click.
+    // friction point — irreversible, no undo, and worth more than just
+    // a click given real data loss is on the line.
     async function handleDelete(button) {
       const incidentEl = button.closest('.incident');
       const id = incidentEl.dataset.id;
@@ -237,8 +237,8 @@
     // by hand) is easy to miss if it's just an alert() someone dismisses
     // without reading. This renders as a persistent block in place of
     // the incident's own action buttons instead — it stays on screen
-    // until explicitly acknowledged, matching 28-Incidents.json
-    // Integration.md's "impossible to miss, not a small aside" call.
+    // until explicitly acknowledged, since a promotion always needs a
+    // real follow-up step and that step shouldn't be easy to lose track of.
     async function handlePromote(button) {
       const incidentEl = button.closest('.incident');
       const id = incidentEl.dataset.id;
@@ -294,11 +294,10 @@
 
         if (res.status === 404) {
           // This button only ever renders for db-backed incidents now
-          // (see 28-Incidents.json Integration.md — file-backed ones
-          // show a Promote action instead). A 404 here means the
-          // incident was deleted, or genuinely does not exist — a real,
-          // if rare, race worth explaining rather than failing silently,
-          // not the routine case it used to be before 28-.
+          // (file-backed ones show a Promote action instead). A 404
+          // here means the incident was deleted, or genuinely does not
+          // exist — a real, if rare, race worth explaining rather than
+          // failing silently.
           alert("This incident no longer exists in the database — it may have just been deleted. Refresh the list to see current state.");
           button.disabled = false;
           return;
