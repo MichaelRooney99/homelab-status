@@ -163,7 +163,7 @@
               <button type="button" class="secondary update-btn">Update</button>
               ${incident.status !== 'resolved'
                 ? '<button type="button" class="danger resolve-btn">Resolve</button>'
-                : ''}
+                : '<button type="button" class="danger delete-btn">Delete</button>'}
             </div>
           </div>
         `).join('');
@@ -174,8 +174,46 @@
         listEl.querySelectorAll('.resolve-btn').forEach(btn => {
           btn.addEventListener('click', () => handleUpdate(btn, true));
         });
+        listEl.querySelectorAll('.delete-btn').forEach(btn => {
+          btn.addEventListener('click', () => handleDelete(btn));
+        });
       } catch (err) {
         listEl.innerHTML = `<p class="status-msg err">Couldn't load incidents: ${escapeHtml(String(err))}</p>`;
+      }
+    }
+
+    // Delete is only ever offered on already-resolved incidents (see the
+    // template above), but the confirm() here is the real, deliberate
+    // friction point — irreversible, no undo, matching 30-Incident
+    // Retirement.md's decision that this needs more than just a click.
+    async function handleDelete(button) {
+      const incidentEl = button.closest('.incident');
+      const id = incidentEl.dataset.id;
+      const title = incidentEl.querySelector('.incident-title').textContent.trim();
+
+      if (!confirm(`Delete "${title}"? This can't be undone.`)) return;
+
+      button.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/admin/incidents/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+        });
+
+        if (res.status === 409) {
+          // Shouldn't normally happen — this button only ever renders
+          // for already-resolved incidents — but a real guard worth
+          // surfacing honestly rather than a silent failure if the
+          // status changed out from under this page some other way.
+          alert("This incident isn't resolved — resolve it first before deleting.");
+          button.disabled = false;
+          return;
+        }
+
+        if (!res.ok) throw new Error(`${res.status}`);
+        loadIncidents();
+      } catch (err) {
+        alert(`Delete failed: ${err}`);
+        button.disabled = false;
       }
     }
 
