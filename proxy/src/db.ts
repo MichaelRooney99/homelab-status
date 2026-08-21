@@ -358,6 +358,75 @@ export function updateIncidentStatus(
   return true
 }
 
+// Single-row status lookup — the DELETE route's precondition check
+// needs to know an incident's current status before allowing removal
+// (see index.ts), and pulling the full table via getAllDraftedIncidents
+// just to check one row's status would be real wasted work for no
+// reason, same reasoning as every other targeted query in this file.
+export function getIncidentStatus(id: string): string | undefined {
+  const row = db.prepare('SELECT status FROM drafted_incidents WHERE id = ?').get(id) as
+    | { status: string }
+    | undefined
+  return row?.status
+}
+
+// Manual, admin-triggered deletion — the /admin/incidents/:id DELETE
+// route's write path. Deliberately unguarded here at the db layer (no
+// "only if resolved" check) — that rule belongs to the caller, same
+// division of responsibility as everywhere else in this file: db.ts
+// executes what it's told, the route layer enforces the actual
+// workflow policy (see index.ts). Returns whether a row actually
+// existed to delete, same boolean-success pattern as
+// appendIncidentUpdate/updateIncidentStatus above.
+export function deleteIncident(id: string): boolean {
+  const result = db.prepare('DELETE FROM drafted_incidents WHERE id = ?').run(id)
+  return result.changes > 0
+}
+
+// ── Incident retirement ─────────────────────────────────────────────
+// See 30-Incident Retirement.md for the full reasoning. Two real,
+// independent mechanisms in one function, run together on every
+// poller tick alongside pruneOldSnapshots: force-resolving anything
+// still unresolved past the retention window, then deleting anything
+// resolved past the same window. A continuous 90-day outage on
+// actively-maintained infrastructure essentially never happens in
+// practice — a real unresolved incident that old is almost always
+// either structurally stuck (references a renamed/removed service_id,
+// so it can never see a fresh 'operational' reading again) or a manual
+// incident someone genuinely forgot to close, not a live outage at
+// real risk of silent deletion.
+//
+// Deliberately keyed on created_at throughout, for both steps —
+// confirmed 08-21-2026, consistent with the single retention rule
+// already decided rather than introducing a second clock. The real
+// consequence, stated plainly: a force-resolved incident becomes
+// eligible for deletion in this same pass, since its created_at is
+// already past the cutoff the instant it flips to resolved. Its
+// "Auto-closed" note is still written first regardless — an honest,
+// if brief, record beats silently deleting an incident nobody ever
+// confirmed was actually over.
+export function pruneOldIncidents(): void {
+  const now = Math.floor(Date.now() / 1000)
+  const cutoff = now - RETENTION_DAYS * 86400
+
+  const stale = db
+    .prepare(`SELECT id, updates FROM drafted_incidents WHERE status != 'resolved' AND created_at < ?`)
+    .all(cutoff) as unknown as { id: string; updates: string }[]
+
+  for (const row of stale) {
+    const updates = JSON.parse(row.updates) as Array<{ timestamp: string; message: string }>
+    updates.push({
+      timestamp: new Date(now * 1000).toISOString(),
+      message: 'Auto-closed: unresolved after 90 days, likely stale.',
+    })
+    db.prepare(
+      `UPDATE drafted_incidents SET status = 'resolved', updated_at = ?, updates = ? WHERE id = ?`
+    ).run(now, JSON.stringify(updates), row.id)
+  }
+
+  db.prepare(`DELETE FROM drafted_incidents WHERE status = 'resolved' AND created_at < ?`).run(cutoff)
+}
+
 // Shaped to match the client's Incident type directly (see types.ts) so
 // index.ts can merge this array with incidents.json's contents and hand
 // the combined result straight to the client with no further mapping.
