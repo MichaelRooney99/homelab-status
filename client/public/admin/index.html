@@ -97,6 +97,35 @@
     .incident-actions input {
       flex: 1;
     }
+    .updates-toggle {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 0.75rem;
+      padding: 0;
+      margin-top: 0.5rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+    .updates-toggle:hover { color: var(--text); }
+    .updates-toggle .chevron {
+      display: inline-block;
+      font-size: 0.7rem;
+      transition: transform 0.15s;
+    }
+    .updates-toggle[aria-expanded="true"] .chevron { transform: rotate(90deg); }
+    .incident-updates {
+      list-style: none;
+      margin: 0.5rem 0 0;
+      padding: 0.5rem 0 0 0.9rem;
+      border-left: 1px solid var(--border);
+    }
+    .incident-updates li { margin-bottom: 0.5rem; font-size: 0.75rem; }
+    .incident-updates li:last-child { margin-bottom: 0; }
+    .incident-updates time { color: var(--muted); }
+    .incident-updates p { margin: 0.15rem 0 0; color: var(--text); }
     .tag {
       display: inline-block;
       font-size: 0.65rem;
@@ -168,6 +197,20 @@
               <span class="tag">${escapeHtml(incident.source ?? 'manual')}</span>
             </div>
             <div class="incident-meta">${escapeHtml((incident.affectedServices || []).join(', '))}</div>
+            ${(incident.updates && incident.updates.length > 0) ? `
+              <button type="button" class="updates-toggle" aria-expanded="false">
+                <span class="chevron">▸</span>
+                ${incident.updates.length} update${incident.updates.length === 1 ? '' : 's'}
+              </button>
+              <ol class="incident-updates" hidden>
+                ${incident.updates.map(update => `
+                  <li>
+                    <time>${escapeHtml(formatUpdateTimestamp(update.timestamp))}</time>
+                    <p>${escapeHtml(update.message)}</p>
+                  </li>
+                `).join('')}
+              </ol>
+            ` : ''}
             <div class="incident-actions">
               ${incident.origin === 'file'
                 ? `<span class="tag">File-backed</span>
@@ -192,6 +235,9 @@
         });
         listEl.querySelectorAll('.promote-btn').forEach(btn => {
           btn.addEventListener('click', () => handlePromote(btn));
+        });
+        listEl.querySelectorAll('.updates-toggle').forEach(btn => {
+          btn.addEventListener('click', () => toggleUpdates(btn));
         });
       } catch (err) {
         listEl.innerHTML = `<p class="status-msg err">Couldn't load incidents: ${escapeHtml(String(err))}</p>`;
@@ -231,6 +277,20 @@
         alert(`Delete failed: ${err}`);
         button.disabled = false;
       }
+    }
+
+    // Collapsed by default, unlike the public page's default-open for
+    // active incidents — the real use case here is confirming a
+    // specific incident's history on demand, not scanning current
+    // outages, so keeping the list compact by default matters more
+    // than surfacing everything at once. State isn't persisted across
+    // a reload since loadIncidents() rebuilds the whole list fresh
+    // every time; that's fine, nothing here needs to survive a refresh.
+    function toggleUpdates(button) {
+      const list = button.nextElementSibling;
+      const isOpen = button.getAttribute('aria-expanded') === 'true';
+      button.setAttribute('aria-expanded', String(!isOpen));
+      list.hidden = isOpen;
     }
 
     // The real manual follow-up here (removing the original file entry
@@ -352,6 +412,18 @@
         btn.disabled = false;
       }
     });
+
+    // Same field set as the public page's own timestamp formatting —
+    // month/day/hour/minute is enough precision for a status update,
+    // full date+seconds would be more noise than signal here.
+    function formatUpdateTimestamp(iso) {
+      return new Date(iso).toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
 
     function escapeHtml(str) {
       const div = document.createElement('div');
