@@ -151,7 +151,7 @@
         incidents.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         listEl.innerHTML = incidents.map(incident => `
-          <div class="incident" data-id="${escapeAttr(incident.id)}">
+          <div class="incident" data-id="${escapeAttr(incident.id)}" data-title="${escapeAttr(incident.title)}">
             <div class="incident-title">
               ${escapeHtml(incident.title)}
               <span class="tag">${escapeHtml(incident.status)}</span>
@@ -189,7 +189,7 @@
     async function handleDelete(button) {
       const incidentEl = button.closest('.incident');
       const id = incidentEl.dataset.id;
-      const title = incidentEl.querySelector('.incident-title').textContent.trim();
+      const title = incidentEl.dataset.title;
 
       if (!confirm(`Delete "${title}"? This can't be undone.`)) return;
 
