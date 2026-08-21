@@ -8,6 +8,7 @@ import {
   deleteIncident,
   pruneOldIncidents,
   promoteFileIncident,
+  getPromotedIncidentId,
   getAllDraftedIncidents,
 } from './db'
 
@@ -321,5 +322,35 @@ describe('promoteFileIncident', () => {
     // possible from inside this function to begin with.
     const newId = promoteFileIncident(fileEntry())
     expect(typeof newId).toBe('string')
+  })
+})
+
+// This is the real double-promotion guard — checked at the route layer
+// before promoteFileIncident ever runs (see index.ts), but the actual
+// tracking mechanism it depends on lives here and deserves its own
+// direct tests, independent of the route logic built on top of it.
+describe('getPromotedIncidentId', () => {
+  it('returns undefined for a file entry that has never been promoted', () => {
+    expect(getPromotedIncidentId('never-promoted-file-id')).toBeUndefined()
+  })
+
+  it('returns the real database id after the file entry has been promoted', () => {
+    const entry = fileEntry({ id: 'file-to-promote-1' })
+    const newId = promoteFileIncident(entry)
+
+    expect(getPromotedIncidentId('file-to-promote-1')).toBe(newId)
+  })
+
+  // The real point of this test: two genuinely different file entries
+  // being promoted around the same time must never get confused with
+  // each other — each lookup has to key off its own real original id,
+  // not just "the most recent promotion" or some other loose match.
+  it('tracks two separately promoted file entries independently, without cross-contamination', () => {
+    const firstId = promoteFileIncident(fileEntry({ id: 'file-a' }))
+    const secondId = promoteFileIncident(fileEntry({ id: 'file-b' }))
+
+    expect(getPromotedIncidentId('file-a')).toBe(firstId)
+    expect(getPromotedIncidentId('file-b')).toBe(secondId)
+    expect(firstId).not.toBe(secondId)
   })
 })
