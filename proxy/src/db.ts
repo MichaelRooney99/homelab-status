@@ -76,6 +76,16 @@ try {
 } catch {
   // Already migrated.
 }
+// NULL for every row except one created via promoteFileIncident below,
+// where it holds the original incidents.json entry's own id. This is
+// the only thing that lets a second promotion attempt on the same file
+// entry be detected and rejected — nothing in the file itself gets
+// marked as "already promoted," since the file is never written to.
+try {
+  db.exec(`ALTER TABLE drafted_incidents ADD COLUMN promoted_from TEXT`)
+} catch {
+  // Already migrated.
+}
 
 const RETENTION_DAYS = 90
 const HISTORY_DAYS = 90
@@ -402,8 +412,8 @@ export function promoteFileIncident(entry: {
 
   db.prepare(
     `INSERT INTO drafted_incidents
-       (id, service_id, status, created_at, updated_at, updates, source, title, affected_services)
-     VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?)`
+       (id, service_id, status, created_at, updated_at, updates, source, title, affected_services, promoted_from)
+     VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)`
   ).run(
     newId,
     primaryServiceId,
@@ -412,10 +422,24 @@ export function promoteFileIncident(entry: {
     updatedAtSeconds,
     JSON.stringify(entry.updates),
     entry.title,
-    JSON.stringify(entry.affectedServices)
+    JSON.stringify(entry.affectedServices),
+    entry.id
   )
 
   return newId
+}
+
+// The real guard against double-promotion: checked before
+// promoteFileIncident runs at all, not after. Returns the existing
+// database id if this file entry was already promoted, so a repeat
+// attempt (most likely someone forgetting the manual file-edit step
+// and clicking Promote again) can be pointed at the row that already
+// exists instead of silently creating a second duplicate.
+export function getPromotedIncidentId(fileEntryId: string): string | undefined {
+  const row = db
+    .prepare('SELECT id FROM drafted_incidents WHERE promoted_from = ?')
+    .get(fileEntryId) as { id: string } | undefined
+  return row?.id
 }
 
 // Manual, admin-triggered deletion — the /admin/incidents/:id DELETE
