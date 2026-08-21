@@ -11,6 +11,8 @@ import {
   createManualIncident,
   appendIncidentUpdate,
   updateIncidentStatus,
+  deleteIncident,
+  getIncidentStatus,
 } from './db'
 import { addNudgeClient, removeNudgeClient, startNudgeChecker, getCachedOverallStatus } from './nudge'
 
@@ -197,6 +199,36 @@ app.patch('/admin/incidents/:id', express.json(), (req, res) => {
       return
     }
 
+    res.json({ ok: true })
+  } catch (error) {
+    // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
+    console.error('Request failed:', error)
+    res.status(500).json({ error: 'Something went wrong handling this request.' })
+  }
+})
+
+// Delete requires resolved status first — this isn't just a
+// data-integrity guard, it's a deliberate workflow discipline (see
+// 30-Incident Retirement.md): the admin UI always models a real
+// incident lifecycle, investigating → resolved → retired, never a
+// shortcut straight from active to gone. The 409 here is the actual
+// enforcement point; the admin page's own confirm() dialog is a UX
+// nicety on top, not the real guard.
+app.delete('/admin/incidents/:id', (req, res) => {
+  try {
+    const currentStatus = getIncidentStatus(req.params.id)
+
+    if (currentStatus === undefined) {
+      res.status(404).json({ error: 'No incident found with that id' })
+      return
+    }
+
+    if (currentStatus !== 'resolved') {
+      res.status(409).json({ error: 'Only resolved incidents can be deleted — resolve it first.' })
+      return
+    }
+
+    deleteIncident(req.params.id)
     res.json({ ok: true })
   } catch (error) {
     // Generic client-facing message, real error logged server-side — see the /incidents route above for the full reasoning.
