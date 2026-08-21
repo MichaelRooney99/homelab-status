@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest'
-import { recordSnapshot, getDayBucketedHistory } from './db'
+import {
+  recordSnapshot,
+  getDayBucketedHistory,
+  createManualIncident,
+  updateIncidentStatus,
+  getIncidentStatus,
+  deleteIncident,
+  pruneOldIncidents,
+} from './db'
 
 // Real node:sqlite instance, in-memory for the whole test run — see
 // vitest.config.ts's SNAPSHOTS_DB_PATH override. Not a mock: this
@@ -149,5 +157,88 @@ describe('getDayBucketedHistory', () => {
     const yesterday = days.find(d => d.date === daysAgoDateStr(1))
     expect(today?.status).toBe('outage')
     expect(yesterday?.status).toBe('operational')
+  })
+})
+
+// createManualIncident is used purely as test setup here to produce a
+// real row to operate on — it has no dedicated test coverage of its
+// own yet, a real pre-existing gap in this file (none of db.ts's
+// incident functions do), not something this pass tried to backfill.
+const RETENTION_DAYS = 90
+const now = () => Math.floor(Date.now() / 1000)
+const daysAgo = (days: number) => now() - days * 86400
+
+describe('getIncidentStatus', () => {
+  it('returns the real status for an existing incident', () => {
+    const id = createManualIncident('test', ['svc'], 'initial message')
+    expect(getIncidentStatus(id)).toBe('investigating')
+  })
+
+  it('returns undefined for an id that does not exist', () => {
+    expect(getIncidentStatus('no-such-id')).toBeUndefined()
+  })
+})
+
+describe('deleteIncident', () => {
+  it('deletes an existing incident and returns true', () => {
+    const id = createManualIncident('test', ['svc'], 'initial message')
+    expect(deleteIncident(id)).toBe(true)
+    expect(getIncidentStatus(id)).toBeUndefined()
+  })
+
+  it('returns false for an id that does not exist, and deletes nothing', () => {
+    expect(deleteIncident('no-such-id')).toBe(false)
+  })
+})
+
+// See 30-Incident Retirement.md for the full reasoning this implements.
+// Real limitation worth stating plainly rather than pretending around:
+// a force-resolved incident becomes eligible for deletion in the same
+// pruneOldIncidents() call that force-resolves it (both steps key off
+// the same created_at cutoff), which means there's no way to observe
+// the intermediate "auto-closed but not yet deleted" state from outside
+// this function — by the time a test can check anything, it's already
+// gone. These tests confirm the real, externally-observable outcome
+// (deleted) rather than the internal note-writing step that happens
+// immediately before it.
+describe('pruneOldIncidents', () => {
+  it('deletes a resolved incident older than the retention window', () => {
+    const oldTimestamp = daysAgo(RETENTION_DAYS + 1)
+    const id = createManualIncident('old resolved', ['svc'], 'initial', oldTimestamp)
+    updateIncidentStatus(id, 'resolved', 'resolving for test', oldTimestamp)
+
+    pruneOldIncidents()
+
+    expect(getIncidentStatus(id)).toBeUndefined()
+  })
+
+  it('leaves a resolved incident within the retention window untouched', () => {
+    const id = createManualIncident('recent resolved', ['svc'], 'initial')
+    updateIncidentStatus(id, 'resolved', 'resolving for test', now())
+
+    pruneOldIncidents()
+
+    expect(getIncidentStatus(id)).toBe('resolved')
+  })
+
+  // The real point of this test: an incident that's still unresolved
+  // and past the retention window doesn't survive indefinitely just
+  // because nothing ever confirmed it was over — see 30-'s reasoning
+  // for why staying open forever isn't actually the safe default here.
+  it('force-resolves then deletes an unresolved incident older than the retention window', () => {
+    const oldTimestamp = daysAgo(RETENTION_DAYS + 1)
+    const id = createManualIncident('old unresolved', ['svc'], 'initial', oldTimestamp)
+
+    pruneOldIncidents()
+
+    expect(getIncidentStatus(id)).toBeUndefined()
+  })
+
+  it('leaves an unresolved incident within the retention window untouched, regardless of status', () => {
+    const id = createManualIncident('recent unresolved', ['svc'], 'initial')
+
+    pruneOldIncidents()
+
+    expect(getIncidentStatus(id)).toBe('investigating')
   })
 })
