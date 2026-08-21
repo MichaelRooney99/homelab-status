@@ -84,6 +84,16 @@
     .incident-title { font-weight: 500; font-size: 0.9rem; }
     .incident-meta { font-size: 0.75rem; color: var(--muted); margin-top: 0.15rem; }
     .incident-actions { display: flex; gap: 0.5rem; margin-top: 0.6rem; }
+    .promote-instruction {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      padding: 0.75rem 0.9rem;
+      font-size: 0.8rem;
+    }
+    .promote-instruction strong { color: var(--accent); }
+    .promote-instruction p { margin: 0.4rem 0 0.7rem; color: var(--text); }
     .incident-actions input {
       flex: 1;
     }
@@ -159,11 +169,14 @@
             </div>
             <div class="incident-meta">${escapeHtml((incident.affectedServices || []).join(', '))}</div>
             <div class="incident-actions">
-              <input type="text" placeholder="Add an update…" class="update-input" />
-              <button type="button" class="secondary update-btn">Update</button>
-              ${incident.status !== 'resolved'
-                ? '<button type="button" class="danger resolve-btn">Resolve</button>'
-                : '<button type="button" class="danger delete-btn">Delete</button>'}
+              ${incident.origin === 'file'
+                ? `<span class="tag">File-backed</span>
+                   <button type="button" class="secondary promote-btn">Promote to editable</button>`
+                : `<input type="text" placeholder="Add an update…" class="update-input" />
+                   <button type="button" class="secondary update-btn">Update</button>
+                   ${incident.status !== 'resolved'
+                     ? '<button type="button" class="danger resolve-btn">Resolve</button>'
+                     : '<button type="button" class="danger delete-btn">Delete</button>'}`}
             </div>
           </div>
         `).join('');
@@ -176,6 +189,9 @@
         });
         listEl.querySelectorAll('.delete-btn').forEach(btn => {
           btn.addEventListener('click', () => handleDelete(btn));
+        });
+        listEl.querySelectorAll('.promote-btn').forEach(btn => {
+          btn.addEventListener('click', () => handlePromote(btn));
         });
       } catch (err) {
         listEl.innerHTML = `<p class="status-msg err">Couldn't load incidents: ${escapeHtml(String(err))}</p>`;
@@ -217,6 +233,43 @@
       }
     }
 
+    // The real manual follow-up here (removing the original file entry
+    // by hand) is easy to miss if it's just an alert() someone dismisses
+    // without reading. This renders as a persistent block in place of
+    // the incident's own action buttons instead — it stays on screen
+    // until explicitly acknowledged, matching 28-Incidents.json
+    // Integration.md's "impossible to miss, not a small aside" call.
+    async function handlePromote(button) {
+      const incidentEl = button.closest('.incident');
+      const id = incidentEl.dataset.id;
+      const title = incidentEl.dataset.title;
+
+      if (!confirm(`Promote "${title}" to an editable database incident? You'll need to make one manual edit to incidents.json afterward — instructions will be shown here once this completes.`)) return;
+
+      button.disabled = true;
+      try {
+        const res = await fetch(`${API_BASE}/admin/incidents/${encodeURIComponent(id)}/promote`, {
+          method: 'POST',
+        });
+
+        if (!res.ok) throw new Error(`${res.status}`);
+        const { manualEditInstruction } = await res.json();
+
+        const actionsEl = incidentEl.querySelector('.incident-actions');
+        actionsEl.innerHTML = `
+          <div class="promote-instruction">
+            <strong>Manual follow-up required:</strong>
+            <p>${escapeHtml(manualEditInstruction)}</p>
+            <button type="button" class="secondary ack-btn">Got it — refresh list</button>
+          </div>
+        `;
+        actionsEl.querySelector('.ack-btn').addEventListener('click', loadIncidents);
+      } catch (err) {
+        alert(`Promote failed: ${err}`);
+        button.disabled = false;
+      }
+    }
+
     async function handleUpdate(button, resolving) {
       const incidentEl = button.closest('.incident');
       const id = incidentEl.dataset.id;
@@ -240,13 +293,13 @@
         });
 
         if (res.status === 404) {
-          // Expected, not a bug. Incidents seeded from incidents.json
-          // predate the admin tool and were never given a database row
-          // this route can find; only incidents created through this UI
-          // (or auto-drafted ones) can be updated here. A bare 404 with
-          // no explanation was the actual gap worth fixing, not this
-          // boundary itself.
-          alert("This incident predates the admin tool and can't be edited here — it's one of the original hand-written entries in incidents.json, not a database-backed one. Edit incidents.json directly and redeploy for changes to entries this old.");
+          // This button only ever renders for db-backed incidents now
+          // (see 28-Incidents.json Integration.md — file-backed ones
+          // show a Promote action instead). A 404 here means the
+          // incident was deleted, or genuinely does not exist — a real,
+          // if rare, race worth explaining rather than failing silently,
+          // not the routine case it used to be before 28-.
+          alert("This incident no longer exists in the database — it may have just been deleted. Refresh the list to see current state.");
           button.disabled = false;
           return;
         }
