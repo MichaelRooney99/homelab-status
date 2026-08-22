@@ -10,6 +10,10 @@ import {
   promoteFileIncident,
   getPromotedIncidentId,
   getAllDraftedIncidents,
+  getActiveDraftedIncident,
+  createDraftedIncident,
+  resolveDraftedIncident,
+  appendIncidentUpdate,
 } from './db'
 
 // Real node:sqlite instance, in-memory for the whole test run — see
@@ -352,5 +356,216 @@ describe('getPromotedIncidentId', () => {
     expect(getPromotedIncidentId('file-a')).toBe(firstId)
     expect(getPromotedIncidentId('file-b')).toBe(secondId)
     expect(firstId).not.toBe(secondId)
+  })
+})
+
+// A unique service id per test, same reasoning as uniqueServiceId()
+// above — createDraftedIncident/getActiveDraftedIncident's dedup logic
+// is scoped per service_id, so tests need real isolation from each
+// other to mean anything.
+let incidentServiceCounter = 0
+function uniqueIncidentServiceId(): string {
+  incidentServiceCounter += 1
+  return `incident-test-service-${incidentServiceCounter}`
+}
+
+describe('getActiveDraftedIncident', () => {
+  it('returns undefined when no incident exists for a service', () => {
+    expect(getActiveDraftedIncident(uniqueIncidentServiceId())).toBeUndefined()
+  })
+
+  it('returns the active auto-drafted incident for a service', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+
+    const active = getActiveDraftedIncident(serviceId)
+    expect(active?.service_id).toBe(serviceId)
+    expect(active?.status).toBe('investigating')
+  })
+
+  // The real point of this test: the source = 'auto' filter is exactly
+  // the kind of one-line guard that regresses silently if ever touched
+  // carelessly. A manual incident sharing the same service_id as an
+  // auto-drafted one must never be picked up here — mixing the two
+  // would corrupt the auto-threshold system's own dedup logic.
+  it('does not return a manual incident sharing the same service_id', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createManualIncident('a manual incident', [serviceId], 'initial')
+
+    expect(getActiveDraftedIncident(serviceId)).toBeUndefined()
+  })
+
+  it('does not return an auto-drafted incident that has already been resolved', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+    const active = getActiveDraftedIncident(serviceId)
+    resolveDraftedIncident(active!.id, now())
+
+    expect(getActiveDraftedIncident(serviceId)).toBeUndefined()
+  })
+})
+
+describe('createDraftedIncident', () => {
+  it('creates a row findable via getActiveDraftedIncident, in investigating status', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+
+    const active = getActiveDraftedIncident(serviceId)
+    expect(active).toBeDefined()
+    expect(active?.status).toBe('investigating')
+  })
+
+  it('writes the real auto-detected message as the first update', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+
+    const active = getActiveDraftedIncident(serviceId)
+    const updates = JSON.parse(active!.updates) as Array<{ message: string }>
+    expect(updates[0].message).toBe(
+      'Auto-detected: 2 consecutive outage readings (at least 30 minutes of sustained outage).'
+    )
+  })
+})
+
+describe('resolveDraftedIncident', () => {
+  it('sets status to resolved and appends the real auto-resolved message', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+    const active = getActiveDraftedIncident(serviceId)
+
+    resolveDraftedIncident(active!.id, now())
+
+    const all = getAllDraftedIncidents()
+    const resolved = all.find(incident => incident.id === active!.id)
+    const resolvedUpdates = resolved?.updates ?? []
+    expect(resolved?.status).toBe('resolved')
+    expect(resolvedUpdates[resolvedUpdates.length - 1]?.message).toBe(
+      'Auto-resolved: 2 consecutive operational readings.'
+    )
+  })
+
+  // Unlike appendIncidentUpdate/updateIncidentStatus, this function has
+  // no boolean return value at all — it's void. Worth a real test
+  // confirming a nonexistent id is a safe no-op rather than assuming it
+  // from reading the early `if (!row) return` guard.
+  it('is a safe no-op for an id that does not exist', () => {
+    expect(() => resolveDraftedIncident('no-such-id', now())).not.toThrow()
+  })
+})
+
+describe('createManualIncident', () => {
+  it('creates a real, retrievable incident with the given services', () => {
+    const id = createManualIncident('a real title', ['svc-a', 'svc-b'], 'initial message')
+    const all = getAllDraftedIncidents()
+    const created = all.find(incident => incident.id === id)
+
+    expect(created?.title).toBe('a real title')
+    expect(created?.affectedServices).toEqual(['svc-a', 'svc-b'])
+    expect(created?.source).toBe('manual')
+    expect(created?.status).toBe('investigating')
+  })
+
+  it('falls back to "unspecified" as the primary service_id when affectedServices is empty', () => {
+    // service_id itself isn't part of getAllDraftedIncidents' shaped
+    // output, so this is checked the same way getActiveDraftedIncident
+    // reads it — an empty affectedServices array is a real, if unusual,
+    // input worth confirming doesn't throw or silently corrupt the row.
+    const id = createManualIncident('no services', [], 'initial message')
+    expect(getIncidentStatus(id)).toBe('investigating')
+  })
+
+  it('defaults to the current time when no timestamp argument is given', () => {
+    const before = now()
+    const id = createManualIncident('default timestamp', ['svc'], 'initial')
+    const after = now()
+
+    const created = getAllDraftedIncidents().find(incident => incident.id === id)
+    const createdAtSeconds = Math.floor(new Date(created!.createdAt).getTime() / 1000)
+    expect(createdAtSeconds).toBeGreaterThanOrEqual(before)
+    expect(createdAtSeconds).toBeLessThanOrEqual(after)
+  })
+})
+
+describe('appendIncidentUpdate', () => {
+  it('appends a message without changing status', () => {
+    const id = createManualIncident('a title', ['svc'], 'initial message')
+    appendIncidentUpdate(id, 'a follow-up update', now())
+
+    const updated = getAllDraftedIncidents().find(incident => incident.id === id)
+    const updatedList = updated?.updates ?? []
+    expect(updated?.status).toBe('investigating')
+    expect(updatedList).toHaveLength(2)
+    expect(updatedList[updatedList.length - 1]?.message).toBe('a follow-up update')
+  })
+
+  it('returns true on a real, successful append', () => {
+    const id = createManualIncident('a title', ['svc'], 'initial message')
+    expect(appendIncidentUpdate(id, 'a follow-up', now())).toBe(true)
+  })
+
+  it('returns false for an id that does not exist', () => {
+    expect(appendIncidentUpdate('no-such-id', 'a message', now())).toBe(false)
+  })
+})
+
+describe('updateIncidentStatus', () => {
+  it('changes status and appends the given message', () => {
+    const id = createManualIncident('a title', ['svc'], 'initial message')
+    updateIncidentStatus(id, 'resolved', 'closing this out', now())
+
+    const updated = getAllDraftedIncidents().find(incident => incident.id === id)
+    const updatedList = updated?.updates ?? []
+    expect(updated?.status).toBe('resolved')
+    expect(updatedList[updatedList.length - 1]?.message).toBe('closing this out')
+  })
+
+  it('returns false for an id that does not exist', () => {
+    expect(updateIncidentStatus('no-such-id', 'resolved', 'a message', now())).toBe(false)
+  })
+})
+
+// getDayBucketedHistory already has its own extensive describe block
+// above — this is scoped specifically to the legacy-row fallback logic
+// inside the read-shaping step, which nothing else in this file
+// touches at all.
+describe('getAllDraftedIncidents', () => {
+  it('falls back to the computed legacy title for an auto-drafted row with no title column set', () => {
+    // createDraftedIncident's own INSERT never sets title/affected_services
+    // at all — a real, naturally-occurring case of the legacy row shape,
+    // not a synthetic one built just for this test.
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+
+    const active = getActiveDraftedIncident(serviceId)
+    const shaped = getAllDraftedIncidents().find(incident => incident.id === active!.id)
+    expect(shaped?.title).toBe(`Sustained outage detected: ${serviceId}`)
+  })
+
+  it('falls back to [service_id] for affectedServices when the column is null', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+
+    const active = getActiveDraftedIncident(serviceId)
+    const shaped = getAllDraftedIncidents().find(incident => incident.id === active!.id)
+    expect(shaped?.affectedServices).toEqual([serviceId])
+  })
+
+  it('returns a manual incident\'s real title and affectedServices as-is, not the fallback', () => {
+    const id = createManualIncident('a real, hand-written title', ['svc-x', 'svc-y'], 'initial')
+
+    const shaped = getAllDraftedIncidents().find(incident => incident.id === id)
+    expect(shaped?.title).toBe('a real, hand-written title')
+    expect(shaped?.affectedServices).toEqual(['svc-x', 'svc-y'])
+  })
+
+  it('distinguishes source correctly between auto-drafted and manual rows', () => {
+    const serviceId = uniqueIncidentServiceId()
+    createDraftedIncident(serviceId, now())
+    const autoId = getActiveDraftedIncident(serviceId)!.id
+    const manualId = createManualIncident('manual', ['svc'], 'initial')
+
+    const all = getAllDraftedIncidents()
+    expect(all.find(i => i.id === autoId)?.source).toBe('auto')
+    expect(all.find(i => i.id === manualId)?.source).toBe('manual')
   })
 })
