@@ -4,6 +4,12 @@ import { fetchProxmoxNodeStatus } from './proxmox'
 import { fetchZabbixStatus } from './zabbix'
 import { fetchIncidents } from './incidents'
 
+// Category name for each adapter promise below, in the exact same
+// order — the only way to know *which* source actually rejected once
+// Promise.allSettled resolves, since a rejected result on its own
+// carries no indication of which promise it came from.
+const SERVICE_ADAPTER_CATEGORIES = ['Proxmox Nodes', 'Power', 'Proxmox API', 'Zabbix'] as const
+
 export async function fetchAllServices(): Promise<StatusPage> {
   const [serviceResults, incidents] = await Promise.all([
     Promise.allSettled([
@@ -21,19 +27,27 @@ export async function fetchAllServices(): Promise<StatusPage> {
   ])
 
   const services: ServiceStatus[] = []
+  const unavailableCategories: string[] = []
 
-  for (const result of serviceResults) {
+  serviceResults.forEach((result, index) => {
     if (result.status === 'fulfilled') {
       services.push(...result.value)
+    } else {
+      // Previously just silently dropped here, with nothing in the
+      // response indicating which source actually failed. The category
+      // is known purely from this promise's position in the array
+      // above — Promise.allSettled itself carries no other way to tie
+      // a rejected result back to which adapter produced it.
+      unavailableCategories.push(SERVICE_ADAPTER_CATEGORIES[index])
     }
-  }
-//If any of the service fetches failed, we can still return the others and just mark the overall status as degraded or unknown depending on how many succeeded. 
-// The UI can also show which specific services failed to load if needed.
+  })
+
   return {
     overall: deriveOverallStatus(services),
     services,
     incidents,
     lastUpdated: new Date().toISOString(),
+    unavailableCategories,
   }
 }
 
