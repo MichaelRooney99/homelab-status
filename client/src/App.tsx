@@ -208,6 +208,33 @@ export default function App() {
           </aside>
 
           <div className="space-y-8 md:order-1">
+            {/*
+              Genuinely different from the categoryFilter chip below —
+              this isn't a UI state the visitor chose, it's an honest
+              report that a real data source failed this cycle. Since
+              fetchAllServices always resolves successfully (a rejected
+              adapter just means fewer services, not a thrown error),
+              the affected category's services simply won't appear
+              below at all this refresh — nothing stale is being shown
+              in their place, so the copy here says that plainly rather
+              than implying otherwise.
+            */}
+            {statusPage.unavailableCategories.length > 0 && (
+              <div
+                role="alert"
+                className="rounded-lg border border-blue-500/40 bg-blue-500/10 px-4 py-3 text-xs text-capstone-text"
+              >
+                <span className="font-medium text-blue-400">
+                  {statusPage.unavailableCategories.length === 1
+                    ? 'Data source unavailable: '
+                    : 'Data sources unavailable: '}
+                </span>
+                {statusPage.unavailableCategories.join(', ')} — services in{' '}
+                {statusPage.unavailableCategories.length === 1 ? 'this category' : 'these categories'}{' '}
+                aren't shown this cycle, not confirmed down. This should resolve on its own once the connection is restored.
+              </div>
+            )}
+
             {categoryFilter && (
               <div className="flex items-center justify-between rounded-lg border border-capstone-border bg-capstone-bg-raised px-4 py-2 text-xs text-capstone-muted">
                 <span>
