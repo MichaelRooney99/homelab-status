@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { utcMidnightSeconds, buildUptimeDays, buildUpsUptimeDays } from './history'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { utcMidnightSeconds, buildUptimeDays, buildUpsUptimeDays, fetchUptimeHistory } from './history'
+import type { ServiceStatus } from './types'
 
 describe('utcMidnightSeconds', () => {
   // This is the direct regression test for a real past bug: a query
@@ -132,5 +133,95 @@ describe('buildUpsUptimeDays', () => {
     const days = buildUpsUptimeDays([])
     const today_ = days.find(d => d.date === todayDateStr)
     expect(today_?.status).toBe('no-data')
+  })
+})
+
+// Routes a mocked global fetch by URL shape, since the functions under
+// test call fetch directly rather than through an importable adapter —
+// unlike fetchAllServices' four dependencies, there's nothing here to
+// vi.mock() at the module level.
+function mockFetchByUrl(handlers: {
+  nodeDiscovery?: () => Response | Promise<Response>
+  nodeRange?: () => Response | Promise<Response>
+  upsRange?: () => Response | Promise<Response>
+  snapshot?: () => Response | Promise<Response>
+}) {
+  return vi.fn((url: string) => {
+    if (url.includes('query_range') && url.includes('node_exporter')) {
+      return handlers.nodeRange?.() ?? okJson({ status: 'success', data: { result: [] } })
+    }
+    if (url.includes('query_range') && url.includes('nut_ups_status')) {
+      return handlers.upsRange?.() ?? okJson({ status: 'success', data: { result: [] } })
+    }
+    if (url.includes('/api/v1/query?') && url.includes('node_exporter')) {
+      return handlers.nodeDiscovery?.() ?? okJson({ status: 'success', data: { result: [] } })
+    }
+    if (url.includes('/history/')) {
+      return handlers.snapshot?.() ?? okJson([])
+    }
+    throw new Error(`Unexpected URL in test: ${url}`)
+  })
+}
+
+function okJson(body: unknown): Response {
+  return { ok: true, json: async () => body } as Response
+}
+
+function failedFetch(): Promise<Response> {
+  return Promise.reject(new Error('network down'))
+}
+
+function service(id: string, category: string): ServiceStatus {
+  return { id, name: id, category, status: 'operational', metadata: {} }
+}
+
+describe('fetchUptimeHistory', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  // The real point of this test: before this session, a failed node-
+  // discovery query threw uncounted out of the whole function, silently
+  // skipping the unrelated snapshot-backed (Proxmox API/Zabbix) history
+  // fetches further down — a Prometheus outage taking down history that
+  // never depended on Prometheus at all. This proves that's fixed.
+  it('still returns snapshot-backed history when the node-discovery query fails, marking Proxmox Nodes unavailable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchByUrl({
+        nodeDiscovery: failedFetch,
+        snapshot: () => okJson([{ date: '2026-08-22', status: 'operational' }]),
+      })
+    )
+
+    const services = [service('proxmox-murloc', 'Proxmox API')]
+    const result = await fetchUptimeHistory(services)
+
+    expect(result.unavailableCategories).toContain('Proxmox Nodes')
+    expect(result.history['proxmox-murloc']).toBeDefined()
+  })
+
+  it('marks Power unavailable when the UPS range query fails, without affecting node or snapshot history', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchByUrl({
+        upsRange: failedFetch,
+        snapshot: () => okJson([{ date: '2026-08-22', status: 'operational' }]),
+      })
+    )
+
+    const services = [service('zabbix-1', 'Zabbix')]
+    const result = await fetchUptimeHistory(services)
+
+    expect(result.unavailableCategories).toEqual(['Power'])
+    expect(result.history['zabbix-1']).toBeDefined()
+  })
+
+  it('returns an empty unavailableCategories list when everything succeeds', async () => {
+    vi.stubGlobal('fetch', mockFetchByUrl({}))
+
+    const result = await fetchUptimeHistory([])
+
+    expect(result.unavailableCategories).toEqual([])
   })
 })
