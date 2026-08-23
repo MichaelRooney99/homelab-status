@@ -40,6 +40,30 @@ describe('calculateUptimePercent', () => {
     expect(calculateUptimePercent(days)).toBeUndefined()
   })
 
+  // Same reasoning as the no-data test above, applied to the other
+  // kind of "we don't actually know" day: the monitoring source itself
+  // was unreachable, not the service reporting bad status. Counting
+  // this against the service would be punishing it for a monitoring
+  // gap it had nothing to do with.
+  it('excludes unreachable days from the denominator entirely', () => {
+    const days = [day('operational'), day('operational'), day('unreachable'), day('unreachable')]
+    expect(calculateUptimePercent(days)).toBe(100)
+  })
+
+  it('returns undefined when every day is unreachable', () => {
+    const days = [day('unreachable'), day('unreachable')]
+    expect(calculateUptimePercent(days)).toBeUndefined()
+  })
+
+  // Confirms the two excluded statuses combine correctly rather than
+  // one accidentally canceling the other out — a real, if unusual, mix
+  // this function needs to handle since both can genuinely occur in
+  // the same 90-day window.
+  it('excludes no-data and unreachable days together, in the same window', () => {
+    const days = [day('operational'), day('no-data'), day('unreachable'), day('outage')]
+    expect(calculateUptimePercent(days)).toBe(50)
+  })
+
   // Guards against a lazy implementation that treats "not outage" as
   // "operational" — degraded is its own real status and has to count
   // against the percentage, not get silently folded into either side.
