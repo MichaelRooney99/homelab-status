@@ -70,7 +70,7 @@ function service(id: string): ServiceStatus {
 }
 
 describe('fetchAllServices', () => {
-  it('merges results from all four service adapters when everything succeeds', async () => {
+  it('merges results from all four service adapters when everything succeeds, with no unavailable categories', async () => {
     vi.mocked(fetchNodeStatus).mockResolvedValue([service('node-a')])
     vi.mocked(fetchUpsStatus).mockResolvedValue([service('ups-a')])
     vi.mocked(fetchProxmoxNodeStatus).mockResolvedValue([service('proxmox-a')])
@@ -80,14 +80,13 @@ describe('fetchAllServices', () => {
     const result = await fetchAllServices()
 
     expect(result.services.map(s => s.id)).toEqual(['node-a', 'ups-a', 'proxmox-a', 'zabbix-a'])
+    expect(result.unavailableCategories).toEqual([])
   })
 
-  // This documents the exact current behavior, on purpose — a failed
-  // source's results just silently disappear from the merged array
-  // today, with nothing in the response signaling which category was
-  // actually the problem. Worth a real test capturing that as the
-  // current, known state rather than leaving it unverified.
-  it('silently drops a rejected adapter\'s results rather than failing the whole request', async () => {
+  // A rejected adapter's results still don't end up in the merged
+  // array — that part is unchanged — but the response now names which
+  // category actually failed instead of the gap being unexplained.
+  it('drops a rejected adapter\'s results but names the real category in unavailableCategories', async () => {
     vi.mocked(fetchNodeStatus).mockResolvedValue([service('node-a')])
     vi.mocked(fetchUpsStatus).mockResolvedValue([service('ups-a')])
     vi.mocked(fetchProxmoxNodeStatus).mockRejectedValue(new Error('proxmox API down'))
@@ -97,9 +96,28 @@ describe('fetchAllServices', () => {
     const result = await fetchAllServices()
 
     expect(result.services.map(s => s.id)).toEqual(['node-a', 'ups-a', 'zabbix-a'])
+    expect(result.unavailableCategories).toEqual(['Proxmox API'])
   })
 
-  it('returns an empty services array, not a rejection, when every adapter fails', async () => {
+  // The real risk with a positional mapping like this one is an off-by-
+  // one — the wrong category getting blamed for a different adapter's
+  // failure. Rejecting the *first* adapter specifically (rather than
+  // one further down the list, like the test above) is what actually
+  // catches that class of bug, since a shifted index would silently
+  // point at the wrong neighbor instead.
+  it('correctly attributes a rejection to the first adapter, not a shifted neighbor', async () => {
+    vi.mocked(fetchNodeStatus).mockRejectedValue(new Error('node exporter down'))
+    vi.mocked(fetchUpsStatus).mockResolvedValue([service('ups-a')])
+    vi.mocked(fetchProxmoxNodeStatus).mockResolvedValue([service('proxmox-a')])
+    vi.mocked(fetchZabbixStatus).mockResolvedValue([service('zabbix-a')])
+    vi.mocked(fetchIncidents).mockResolvedValue([])
+
+    const result = await fetchAllServices()
+
+    expect(result.unavailableCategories).toEqual(['Proxmox Nodes'])
+  })
+
+  it('returns an empty services array and every category name, not a rejection, when every adapter fails', async () => {
     vi.mocked(fetchNodeStatus).mockRejectedValue(new Error('down'))
     vi.mocked(fetchUpsStatus).mockRejectedValue(new Error('down'))
     vi.mocked(fetchProxmoxNodeStatus).mockRejectedValue(new Error('down'))
@@ -109,6 +127,7 @@ describe('fetchAllServices', () => {
     const result = await fetchAllServices()
 
     expect(result.services).toEqual([])
+    expect(result.unavailableCategories).toEqual(['Proxmox Nodes', 'Power', 'Proxmox API', 'Zabbix'])
   })
 
   // Incidents get their own independent failure isolation, deliberately
