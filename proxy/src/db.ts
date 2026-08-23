@@ -138,9 +138,21 @@ export function getDayBucketedHistory(
     .all(serviceId, start) as unknown as SnapshotRow[]
 
   const worstByDate = new Map<string, string>()
+  // A day can have both unreachable readings and real severity readings
+  // (the source came back mid-day, say) — real data always wins over
+  // "we don't know" when both exist for the same date, so this stays a
+  // separate fallback tracked independently, not folded into the same
+  // severity ranking as outage/degraded/operational.
+  const unreachableDates = new Set<string>()
 
   for (const row of rows) {
     const dateStr = new Date(row.timestamp * 1000).toISOString().split('T')[0]
+
+    if (row.status === 'unreachable') {
+      unreachableDates.add(dateStr)
+      continue
+    }
+
     const severity = SEVERITY[row.status]
     if (severity === undefined) continue // 'unknown' readings excluded, see above
 
@@ -166,10 +178,9 @@ export function getDayBucketedHistory(
     const dateStr = new Date((todayUtcMidnight - i * 86400) * 1000)
       .toISOString()
       .split('T')[0]
-    result.push({
-      date: dateStr,
-      status: worstByDate.get(dateStr) ?? 'no-data',
-    })
+    const realStatus = worstByDate.get(dateStr)
+    const status = realStatus ?? (unreachableDates.has(dateStr) ? 'unreachable' : 'no-data')
+    result.push({ date: dateStr, status })
   }
 
   return result
