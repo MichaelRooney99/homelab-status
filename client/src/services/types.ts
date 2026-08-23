@@ -38,11 +38,25 @@ export interface StatusPage {
   services: ServiceStatus[]
   incidents: Incident[]
   lastUpdated: string
+  // Category names whose adapter promise actually rejected this fetch —
+  // not "this category has zero services" (a legitimate, quiet state),
+  // but "the source itself couldn't be reached at all." Empty when
+  // everything succeeded. Lets the UI show an honest "this data source
+  // is currently unavailable" message instead of a category silently
+  // vanishing with no explanation.
+  unavailableCategories: string[]
 }
 
 //need something to hold "history" of the status for each day, so I can show a graph of the uptime over time.
 //  This will be used to show the uptime percentage for the last 90 days, and also to show a graph of the uptime over time.
-export type DayStatus = 'operational' | 'degraded' | 'outage' | 'unknown' | 'no-data'
+// 'unreachable' is genuinely different from 'unknown' or 'no-data' — it
+// means the monitoring source itself couldn't be reached for that day,
+// not that a reading came back uninformative (unknown) or that nothing
+// was ever recorded (no-data, which also covers a service's history
+// before it existed). All three end up looking like "we don't have a
+// real status" to a casual glance, but only 'unreachable' means the
+// visibility gap itself is the actual, known problem.
+export type DayStatus = 'operational' | 'degraded' | 'outage' | 'unknown' | 'no-data' | 'unreachable'
 
 export interface UptimeDay {
   date: string
