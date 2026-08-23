@@ -108,6 +108,33 @@ interface ZabbixHostGetResponse {
 
 const ZABBIX_SERVER_NAME = 'Zabbix server'
 
+// Remembered specifically for the failure path in each poll function
+// below — if a fetch throws before its own response is ever parsed,
+// there's no service-id list to work from at all, since that list
+// would normally come straight out of the very response that just
+// failed. Each cache holds whatever ids were last seen on a genuinely
+// successful poll; a source that's never once succeeded (a fresh
+// deploy, or one down from the very start) has nothing to fall back
+// on, which correctly means nothing gets recorded for it yet — there's
+// no known list to attribute an unreachable reading to.
+let lastKnownProxmoxServiceIds: string[] = []
+let lastKnownZabbixServiceIds: string[] = []
+
+// A source going fully unreachable and a source with genuinely nothing
+// to report read identically in history without this — both would
+// just show as 'no-data'. Deliberately skips checkIncidentThreshold:
+// an 'unreachable' reading is neither 'outage' nor 'operational', so
+// the auto-threshold logic would no-op on it regardless, but there's
+// no real threshold-worthy event happening here at all, just a
+// monitoring gap, so calling it would be pointless work rather than
+// merely harmless.
+function recordUnreachable(serviceIds: string[]): void {
+  const now = Math.floor(Date.now() / 1000)
+  for (const serviceId of serviceIds) {
+    recordSnapshot(serviceId, 'unreachable', null, now)
+  }
+}
+
 // Mirrors the (fixed) derivation logic in the client's zabbix.ts exactly
 // — same interface lookup, same available-code mapping. Duplicated
 // rather than shared: the amount of logic is small, and building
@@ -149,14 +176,18 @@ async function pollProxmox(port: string | number): Promise<void> {
     // status — that was the exact bug fixed in the client adapter this
     // same session. An offline node here gets recorded as an outage,
     // not silently skipped.
+    const seenServiceIds: string[] = []
     for (const node of nodes) {
       const status = node.status === 'online' ? 'operational' : 'outage'
       const serviceId = `proxmox-${node.node}`
+      seenServiceIds.push(serviceId)
       recordSnapshot(serviceId, status, responseTimeMs, now)
       checkIncidentThreshold(serviceId, now)
     }
+    lastKnownProxmoxServiceIds = seenServiceIds
   } catch (error) {
     console.error('Proxmox poll failed:', error)
+    recordUnreachable(lastKnownProxmoxServiceIds)
   }
 }
 
@@ -187,15 +218,19 @@ async function pollZabbix(port: string | number): Promise<void> {
     const hosts = json.result ?? []
     const now = Math.floor(Date.now() / 1000)
 
+    const seenServiceIds: string[] = []
     for (const host of hosts) {
       if (host.name === ZABBIX_SERVER_NAME) continue
       const serviceId = `zabbix-${host.hostid}`
+      seenServiceIds.push(serviceId)
       const status = deriveZabbixStatus(host.interfaces)
       recordSnapshot(serviceId, status, responseTimeMs, now)
       checkIncidentThreshold(serviceId, now)
     }
+    lastKnownZabbixServiceIds = seenServiceIds
   } catch (error) {
     console.error('Zabbix poll failed:', error)
+    recordUnreachable(lastKnownZabbixServiceIds)
   }
 }
 
