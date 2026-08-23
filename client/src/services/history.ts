@@ -216,32 +216,51 @@ async function fetchProxySnapshotHistory(serviceId: string): Promise<UptimeDay[]
 // the proxy for each one's recorded history. App.tsx falls back to the
 // placeholder generator for any service id not present in the returned
 // map (nothing recorded yet, or a fetch failed this poll).
+//
+// unavailableCategories mirrors the same signal fetchAllServices returns
+// for live status — reserved for "this whole category's history couldn't
+// even be attempted this cycle" (Prometheus itself unreachable for the
+// node-discovery query, or the UPS range query specifically), not for a
+// single node instance failing while its siblings succeed. A lone failed
+// instance still falls back to the placeholder — a narrower, less severe
+// case than the entire category being unreachable.
 export async function fetchUptimeHistory(
   services: ServiceStatus[] = []
-): Promise<Record<string, UptimeDay[]>> {
+): Promise<{ history: Record<string, UptimeDay[]>; unavailableCategories: string[] }> {
   const history: Record<string, UptimeDay[]> = {}
+  const unavailableCategories: string[] = []
 
-  const nodeInstances = await queryPrometheusInstant('up{job="node_exporter"}')
+  // Deliberately its own try/catch, separate from the individual-instance
+  // isolation below — if this discovery query itself fails, there's no
+  // instance list to even attempt fetchNodeInstanceHistory against, and
+  // previously that meant this whole function threw, silently skipping
+  // the unrelated Proxmox API / Zabbix history fetches further down too.
+  // A Prometheus outage has no business taking down snapshot-backed
+  // history that never depended on Prometheus at all.
+  try {
+    const nodeInstances = await queryPrometheusInstant('up{job="node_exporter"}')
 
-  const nodeResults = await Promise.allSettled(
-    nodeInstances.map(async result => {
-      const instance = result.metric.instance
-      const days = await fetchNodeInstanceHistory(instance)
-      return { instance, days }
-    })
-  )
+    const nodeResults = await Promise.allSettled(
+      nodeInstances.map(async result => {
+        const instance = result.metric.instance
+        const days = await fetchNodeInstanceHistory(instance)
+        return { instance, days }
+      })
+    )
 
-  for (const result of nodeResults) {
-    if (result.status === 'fulfilled') {
-      history[result.value.instance] = result.value.days
+    for (const result of nodeResults) {
+      if (result.status === 'fulfilled') {
+        history[result.value.instance] = result.value.days
+      }
     }
+  } catch {
+    unavailableCategories.push('Proxmox Nodes')
   }
 
   try {
     history['ups-cyberpower'] = await fetchUpsHistory()
   } catch {
-    // UPS history unavailable this poll — App.tsx falls back to the
-    // placeholder for this one id rather than failing the whole map.
+    unavailableCategories.push('Power')
   }
 
   const snapshotBackedServices = services.filter(
@@ -261,5 +280,5 @@ export async function fetchUptimeHistory(
     }
   }
 
-  return history
+  return { history, unavailableCategories }
 }

@@ -15,7 +15,7 @@ import type { ServiceStatus, UptimeDay } from '../services/types'
 // regardless. Re-deriving it here would just be a duplicate network
 // call for data the app already has.
 export function useUptimeHistory(services: ServiceStatus[]) {
-  const { data, isLoading } = useQuery<Record<string, UptimeDay[]>>({
+  const { data, isLoading } = useQuery<{ history: Record<string, UptimeDay[]>; unavailableCategories: string[] }>({
     // Service ids folded into the query key so a genuinely new or
     // removed service (a node joining the fleet, for instance) triggers
     // a refetch on its own, not just whenever the hourly timer happens
@@ -30,7 +30,8 @@ export function useUptimeHistory(services: ServiceStatus[]) {
   })
 
   return {
-    history: data ?? {},
+    history: data?.history ?? {},
+    unavailableCategories: data?.unavailableCategories ?? [],
     isLoading,
   }
 }
