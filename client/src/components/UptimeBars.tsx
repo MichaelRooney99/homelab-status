@@ -11,6 +11,7 @@ const dayColor: Record<DayStatus, string> = {
   outage: 'bg-red-500',
   unknown: 'bg-capstone-muted',
   'no-data': 'bg-capstone-subtle',
+  unreachable: 'bg-blue-500',
 }
 
 const dayLabel: Record<DayStatus, string> = {
@@ -19,6 +20,7 @@ const dayLabel: Record<DayStatus, string> = {
   outage: 'Outage',
   unknown: 'Unknown',
   'no-data': 'No data',
+  unreachable: 'Source unreachable',
 }
 
 function formatDate(iso: string): string {
