@@ -151,6 +151,49 @@ describe('getDayBucketedHistory', () => {
     expect(today?.status).toBe('outage')
   })
 
+  // Deliberately the opposite outcome from the 'unknown' test right
+  // above, even though both start from "a day with exactly one, non-
+  // real-severity reading." 'unknown' means a reading came back but
+  // wasn't informative; 'unreachable' means the source couldn't be
+  // asked at all — a genuinely different fact, and this is the test
+  // proving the two don't collapse into the same 'no-data' result.
+  it('marks a day as unreachable when the only reading that day is unreachable', () => {
+    const serviceId = uniqueServiceId()
+    recordSnapshot(serviceId, 'unreachable', null, todayUtcMidnight())
+
+    const days = getDayBucketedHistory(serviceId)
+    const today = days.find(d => d.date === todayDateStr())
+    expect(today?.status).toBe('unreachable')
+  })
+
+  // The real point of this test: 'unreachable' is a fallback, not a
+  // real severity level. A genuine reading recorded the same day — the
+  // source came back partway through — has to win, the same way a real
+  // outage already wins over an 'unknown' reading above.
+  it('a real severity reading still wins over an unreachable reading recorded the same day', () => {
+    const serviceId = uniqueServiceId()
+    const base = todayUtcMidnight()
+    recordSnapshot(serviceId, 'unreachable', null, base + 60)
+    recordSnapshot(serviceId, 'operational', null, base + 120)
+
+    const days = getDayBucketedHistory(serviceId)
+    const today = days.find(d => d.date === todayDateStr())
+    expect(today?.status).toBe('operational')
+  })
+
+  // Confirms an unreachable day and a genuinely empty day are still
+  // told apart correctly — 'unreachable' should only ever appear on a
+  // day that actually has an unreachable reading recorded, never as a
+  // default for silence.
+  it('a day with zero readings at all still falls back to no-data, not unreachable', () => {
+    const serviceId = uniqueServiceId()
+    recordSnapshot(serviceId, 'operational', null, todayUtcMidnight() - 86400)
+
+    const days = getDayBucketedHistory(serviceId)
+    const today = days.find(d => d.date === todayDateStr())
+    expect(today?.status).toBe('no-data')
+  })
+
   // Confirms the day-bucketing boundary itself — a reading recorded on
   // one real calendar day must never leak into an adjacent day's
   // bucket, in either direction.
