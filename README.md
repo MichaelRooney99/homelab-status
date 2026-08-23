@@ -79,7 +79,7 @@ homelab-status/
 ├── client/
 │   ├── public/
 │   │   └── admin/
-│   │       └── index.html      ← standalone admin UI — plain HTML/JS, no router added to the React app for one page, gated by Cloudflare Access on /admin/*, not application code
+│   │       └── index.html      ← standalone admin UI — plain HTML/JS, no router added to the React app for one page, gated by Cloudflare Access on /admin/*, not application code. Create/update/resolve/delete/promote incidents, collapsible per-incident update-log view
 │   ├── src/
 │   │   ├── services/       ← one adapter per data source, normalized to ServiceStatus[]
 │   │   │   ├── types.ts
@@ -124,8 +124,8 @@ homelab-status/
 │   └── .env
 ├── proxy/
 │   ├── src/
-│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, /badge.svg, POST+PATCH /admin/incidents (Cloudflare Access-gated), plus the Proxmox/Zabbix/Prometheus proxy passthroughs
-│   │   ├── db.ts        ← node:sqlite storage — snapshot poller history, auto-drafted incidents, and manual incidents (same table, source/title/affected_services columns distinguish them)
+│   │   ├── index.ts    ← routes: /health, /incidents, /history/:serviceId, /history/:serviceId/recent, /events, /badge.svg, POST+PATCH+DELETE /admin/incidents, POST /admin/incidents/:id/promote (all Cloudflare Access-gated), plus the Proxmox/Zabbix/Prometheus proxy passthroughs
+│   │   ├── db.ts        ← node:sqlite storage — snapshot poller history, auto-drafted incidents, and manual incidents (same table, source/title/affected_services columns distinguish them). Also incident retirement (manual delete, 90-day auto-pruning) and incidents.json promotion — see db.test.ts for the full behavior these are tested against
 │   │   ├── db.test.ts
 │   │   ├── poller.ts    ← independent 15-minute background poll for Proxmox API/Zabbix history, and the auto-drafted-incident threshold check
 │   │   ├── poller.test.ts
@@ -224,7 +224,7 @@ curl https://status.michaelrooney.dev/badge.svg
 
 There's no single combined "everything at once" endpoint yet — an external consumer currently needs to hit these separately, the same way the client itself does. That's a deliberate scope call, not an oversight: three separate calls matches what the client itself does internally, and a combined feed wasn't worth building speculatively without real demand for one.
 
-**Not public:** `POST /admin/incidents` and `PATCH /admin/incidents/:id` let an authenticated admin create and update incidents directly, without a git push. Gated by Cloudflare Access on the `/admin/*` path — unauthenticated requests never reach these routes at all.
+**Not public:** `POST /admin/incidents`, `PATCH /admin/incidents/:id`, `DELETE /admin/incidents/:id`, and `POST /admin/incidents/:id/promote` let an authenticated admin create, update, retire, and promote incidents directly, without a git push. `DELETE` requires an incident to already be resolved — enforced server-side with a real `409`, not just a UI-level guard. All gated by Cloudflare Access on the `/admin/*` path — unauthenticated requests never reach these routes at all.
 
 ---
 
@@ -280,6 +280,19 @@ Full writeup of how these pieces fit together — the anti-flash inline script, 
 - [web.dev — Cross-Origin Resource Sharing](https://web.dev/cross-origin-resource-sharing)
 - [YouTube playlist](https://www.youtube.com/watch?v=k_0ZzvHbNBQ&list=PLillGF-RfqbYRpji8t4SxUkMxfowG4Kqp)
 - [MDN — CORS](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS) — long, just put on a screen reader and do the dishes because every section has relevance
+
+### Testing / Vitest
+
+Two genuinely different testing styles live in this codebase, not one. Pure functions (`decideIncidentAction`, `deriveOverallStatus`, everything in `db.ts`) get tested directly, no mocking at all — real in-memory SQLite for the database layer, real fixture data for the derivation logic shared between client and proxy. Anything that depends on something else doing real work outside the function itself — a network fetch, a database call one layer up — gets that dependency mocked instead, so the test controls every input directly rather than depending on real infrastructure being reachable and behaving a specific way at the exact moment the suite runs.
+
+- [Vitest — Getting Started](https://vitest.dev/guide/) — the framework itself, drop-in Jest-compatible API running on Vite's own transform pipeline rather than a separate bundler
+- [Vitest — Mocking](https://vitest.dev/guide/mocking.html) — the general mocking guide `vi.mock`/`vi.fn` come from
+- [Vitest API — `vi`](https://vitest.dev/api/vi.html) — full reference for `vi.fn`, `vi.mock`, `vi.mocked`, and the rest of the mocking toolkit
+- [Vitest — In-source testing](https://vitest.dev/guide/in-source.html) — not used in this project, but useful context for why test files here sit next to their source files instead of a separate `__tests__/` directory
+- [Testing Library — React Testing Library](https://testing-library.com/docs/react-testing-library/intro/) — `render`, `renderHook`, and the "test what a user would see" philosophy behind `CommandPalette.test.tsx` and `ServiceDetailModal.test.tsx`
+- [Testing Library — `user-event`](https://testing-library.com/docs/user-event/intro/) — real simulated typing, clicking, and keyboard navigation, not raw synthetic DOM events, used throughout the component-level tests
+
+One real, non-obvious thing worth knowing before writing a `vi.mock` call: it doesn't run in the order it's written on the page. Vitest hoists every `vi.mock()` call to the top of the file, above the real import statements, during a compile step — which is the only reason writing it visually *after* an import can still affect that same import. Full write-up of why that matters and what it looks like in practice, working through the test suite for this project's own main data-merging function: [What vi.mock Actually Does, and Why Order Doesn't Matter the Way It Looks Like It Should](https://michaelrooney.dev/journal/08-22-2026.html).
 
 ### Docker
 
