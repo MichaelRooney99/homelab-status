@@ -118,15 +118,19 @@ app.get('/health', (_req, res) => {
 // — same reasoning as always, the file is tiny and requests are
 // infrequent. Merges two genuinely different storage locations at read
 // time: incidents.json (hand-edited, git-tracked, read-only inside this
-// container — I will likely use it for incidents that dont show up as incidents) and drafted_incidents
-// (DB-backed, writable, lives in the same snapshots.db the history
-// endpoints already use). drafted_incidents itself holds two kinds of
-// rows — auto-detected and admin-authored — both already carry a real
-// `source` column, so no extra mapping is needed here beyond the
-// file's own default. Every incidents.json entry gets source: 'manual'
-// stamped on if it doesn't already have one, since every existing
-// entry predates that field and defaulting here means the file itself
-// never needed a one-time migration.
+// container) and drafted_incidents (DB-backed, writable, lives in the
+// same snapshots.db the history endpoints already use). incidents.json
+// predates drafted_incidents entirely — it's how manual incidents were
+// stored before the DB-backed table and the promote flow existed. Kept
+// deliberately rather than migrated away: it's the real input for
+// /admin/incidents/:id/promote below, a genuine legacy artifact rather
+// than an active incident-authoring path going forward. drafted_incidents
+// itself holds two kinds of rows — auto-detected and admin-authored —
+// both already carry a real `source` column, so no extra mapping is
+// needed here beyond the file's own default. Every incidents.json entry
+// gets source: 'manual' stamped on if it doesn't already have one, since
+// every existing entry predates that field and defaulting here means
+// the file itself never needed a one-time migration.
 app.get('/incidents', async (_req, res) => {
   try {
     const raw = await readFile(INCIDENTS_FILE, 'utf-8')

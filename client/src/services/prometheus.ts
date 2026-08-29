@@ -4,7 +4,13 @@ interface PrometheusResult {
   metric: Record<string, string>
   value: [number, string]
 }
-const PROMETHEUS_URL = import.meta.env.VITE_PROMETHEUS_URL ?? 'http://10.10.10.105:9090' //local prometheus instance running in docker on the homelab server
+const PROMETHEUS_URL = import.meta.env.VITE_PROMETHEUS_URL ?? 'http://10.10.10.105:9090'
+// Falls back to the LAN Prometheus instance directly for local dev.
+// In production VITE_PROMETHEUS_URL is baked to a same-origin
+// '/prometheus' path at build time, which nginx forwards to this
+// same proxy's own allowlisted route — same BFF boundary as the
+// Proxmox/Zabbix adapters below, just reached via build-time env
+// substitution instead of a hardcoded proxy call.
 
 async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
   const url = `${PROMETHEUS_URL}/api/v1/query?query=${encodeURIComponent(query)}`
@@ -22,10 +28,12 @@ async function queryPrometheus(query: string): Promise<PrometheusResult[]> {
 
   return json.data.result
 }
-//promQL queries to fetch node exporter metrics for all nodes, then shape that data into the ServiceStatus format used by the app. 
-// This is just an example, you can customize the queries and the resulting ServiceStatus objects as needed for your specific use case. 
-// For example, you might want to include additional metadata about each node, or calculate the status based on specific thresholds for CPU and memory usage.
-// ok this AI is really good at writing code, but I need to stop it before it writes the entire function for me. 
+
+// Three independent PromQL queries — 'up' for liveness, then CPU and
+// memory usage — run in parallel and joined on Prometheus's own
+// 'instance' label. Liveness alone drives the operational/outage
+// verdict; CPU and memory ride alongside purely as display metadata,
+// not as inputs to the status itself.
 export async function fetchNodeStatus(): Promise<ServiceStatus[]> {
   const [upResults, cpuResults, memResults] = await Promise.all([
     queryPrometheus('up{job="node_exporter"}'),
