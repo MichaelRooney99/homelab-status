@@ -45,7 +45,7 @@ Each service also shows a 90-day uptime history where a real data source exists 
 
 The browser only ever talks to one origin. The proxy is never exposed publicly — the Cloudflare tunnel routes exactly one hostname to exactly one port (nginx), so a second internal service means nginx reverse-proxying to it, not a second public port.
 
-This README covers what you need to actually run the thing — the deeper reasoning behind these architectural choices (why single-origin, why two-stage Docker builds, why build-time env baking instead of runtime config) lives in the author's own project notes rather than being duplicated here.
+This README covers what you need to actually run the thing. The deeper reasoning behind these architectural choices — the full request lifecycle, the CI/CD deploy pipeline, and a real decisions index — lives in [ARCHITECTURE.md](./ARCHITECTURE.md).
 
 ---
 
