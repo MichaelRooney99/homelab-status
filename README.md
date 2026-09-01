@@ -138,6 +138,8 @@ homelab-status/
 │   └── .env
 ├── docker-compose.yml    ← includes a named volume (snapshots-data) so poller history survives redeploys
 ├── README.md
+├── ARCHITECTURE.md
+├── architecture-diagram.pdf
 └── .dockerignore
 ```
 

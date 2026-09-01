@@ -42,4 +42,4 @@ Two independent Cloudflare tunnels are worth noticing immediately: one serves th
 
 ## Current status
 
-The application, its full test suite, the CI/CD pipeline, and every planned feature are complete and confirmed live in production. The one remaining deliverable is a portfolio case study — a narrative write-up for a general audience, external to this repository.
+The application, its full test suite, the CI/CD pipeline, and every planned feature are complete and confirmed live in production. The one remaining deliverable is a [portfolio case study](https://michaelrooney.dev/work/capstone/case-study.html) — a narrative write-up for a general audience, external to this repository. [The Session journal](https://michaelrooney.dev/work/capstone/capstone-index.html) - details my experiences throughout the build of this project.
