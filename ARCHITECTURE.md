@@ -13,6 +13,7 @@ Two independent Cloudflare tunnels are worth noticing immediately: one serves th
 
 ## What actually happens between loading the page and seeing a status
 
+
 **The read path.** The browser's `useServiceStatus` hook polls every 60 seconds via TanStack Query, chosen specifically for `refetchIntervalInBackground` — a plain `setInterval` stops firing the moment a browser throttles a backgrounded tab, which is exactly when someone would still want to know their homelab went down. That hook calls a single aggregation facade, which fans out to four adapters — Prometheus (nodes + UPS), Proxmox API, and Zabbix — through `Promise.allSettled`, not `Promise.all`, so one dead source degrades gracefully instead of blanking the whole page. Every adapter reaches its real data source through the proxy, never directly: in production, even the Prometheus adapter's URL is baked to a same-origin path at build time and forwarded by nginx into the same proxy every other adapter uses.
 
 **The trust boundary.** The proxy is the only thing holding real credentials — a Proxmox API token, Zabbix login credentials. Every passthrough route is restricted to the exact path and method shape the app actually calls, not just forwarded wholesale; without that restriction, a public request could reach any endpoint those credentials are allowed to touch, not just the read-only status checks this app was ever meant to expose.
