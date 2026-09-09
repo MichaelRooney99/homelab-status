@@ -26,11 +26,11 @@ import type { ServiceStatus, Status, UptimeDay } from './services/types'
 const CATEGORY_ORDER = [
   'Proxmox Nodes',
   'Proxmox API',
+  'Zabbix',
   'Power',
   'Environment',
   'Network',
   'Services',
-  'Zabbix',
 ]
 
 function groupByCategory(services: ServiceStatus[]): Map<string, ServiceStatus[]> {
