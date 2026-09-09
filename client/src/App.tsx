@@ -27,6 +27,7 @@ const CATEGORY_ORDER = [
   'Proxmox Nodes',
   'Proxmox API',
   'Power',
+  'Environment',
   'Network',
   'Services',
   'Zabbix',

@@ -1,5 +1,5 @@
 import type { StatusPage, ServiceStatus, Status, Incident } from './types'
-import { fetchNodeStatus, fetchUpsStatus } from './prometheus'
+import { fetchNodeStatus, fetchUpsStatus, fetchRackSensorStatus } from './prometheus'
 import { fetchProxmoxNodeStatus } from './proxmox'
 import { fetchZabbixStatus } from './zabbix'
 import { fetchIncidents } from './incidents'
@@ -8,13 +8,14 @@ import { fetchIncidents } from './incidents'
 // order — the only way to know *which* source actually rejected once
 // Promise.allSettled resolves, since a rejected result on its own
 // carries no indication of which promise it came from.
-const SERVICE_ADAPTER_CATEGORIES = ['Proxmox Nodes', 'Power', 'Proxmox API', 'Zabbix'] as const
+const SERVICE_ADAPTER_CATEGORIES = ['Proxmox Nodes', 'Power', 'Environment', 'Proxmox API', 'Zabbix'] as const
 
 export async function fetchAllServices(): Promise<StatusPage> {
   const [serviceResults, incidents] = await Promise.all([
     Promise.allSettled([
       fetchNodeStatus(),
       fetchUpsStatus(),
+      fetchRackSensorStatus(),
       fetchProxmoxNodeStatus(),
       fetchZabbixStatus(),
     ]),

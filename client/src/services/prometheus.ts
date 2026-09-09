@@ -125,3 +125,40 @@ export async function fetchUpsStatus(): Promise<ServiceStatus[]> {
     },
   }]
 }
+
+// Same shape as fetchUpsStatus above — a single fixed service, liveness
+// alone drives operational/outage, temperature and pressure ride along
+// as display metadata only, not as inputs to the status itself.
+// Rack-Sensor-01 exposes its own tiny HTTP server directly on port 80,
+// scraped by Prometheus the same way node_exporter is — no
+// pushgateway, no MQTT broker, no second observability pattern just
+// because the hardware differs from the rest of the fleet.
+export async function fetchRackSensorStatus(): Promise<ServiceStatus[]> {
+  const [upResults, tempResults, pressureResults] = await Promise.all([
+    queryPrometheus('up{job="rack_sensor"}'),
+    queryPrometheus('rack_temperature_fahrenheit'),
+    queryPrometheus('rack_pressure_hpa'),
+  ])
+
+  const isUp = upResults[0]?.value[1] === '1'
+  const friendlyName = upResults[0]?.metric.friendly_name ?? 'Rack-Sensor-01'
+
+  const temperature = tempResults[0]
+    ? `${parseFloat(tempResults[0].value[1]).toFixed(1)}°F`
+    : '—'
+
+  const pressure = pressureResults[0]
+    ? `${parseFloat(pressureResults[0].value[1]).toFixed(1)} hPa`
+    : '—'
+
+  return [{
+    id: 'rack-sensor-01',
+    name: friendlyName,
+    category: 'Environment',
+    status: isUp ? 'operational' : 'outage',
+    metadata: {
+      temperature,
+      pressure,
+    },
+  }]
+}

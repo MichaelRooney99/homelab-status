@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { deriveOverallStatus, fetchAllServices } from '.'
-import { fetchNodeStatus, fetchUpsStatus } from './prometheus'
+import { fetchNodeStatus, fetchUpsStatus, fetchRackSensorStatus } from './prometheus'
 import { fetchProxmoxNodeStatus } from './proxmox'
 import { fetchZabbixStatus } from './zabbix'
 import { fetchIncidents } from './incidents'
@@ -12,6 +12,7 @@ import type { ServiceStatus, Status } from './types'
 vi.mock('./prometheus', () => ({
   fetchNodeStatus: vi.fn(),
   fetchUpsStatus: vi.fn(),
+  fetchRackSensorStatus: vi.fn(),
 }))
 vi.mock('./proxmox', () => ({ fetchProxmoxNodeStatus: vi.fn() }))
 vi.mock('./zabbix', () => ({ fetchZabbixStatus: vi.fn() }))
@@ -70,16 +71,17 @@ function service(id: string): ServiceStatus {
 }
 
 describe('fetchAllServices', () => {
-  it('merges results from all four service adapters when everything succeeds, with no unavailable categories', async () => {
+  it('merges results from all five service adapters when everything succeeds, with no unavailable categories', async () => {
     vi.mocked(fetchNodeStatus).mockResolvedValue([service('node-a')])
     vi.mocked(fetchUpsStatus).mockResolvedValue([service('ups-a')])
+    vi.mocked(fetchRackSensorStatus).mockResolvedValue([service('rack-a')])
     vi.mocked(fetchProxmoxNodeStatus).mockResolvedValue([service('proxmox-a')])
     vi.mocked(fetchZabbixStatus).mockResolvedValue([service('zabbix-a')])
     vi.mocked(fetchIncidents).mockResolvedValue([])
 
     const result = await fetchAllServices()
 
-    expect(result.services.map(s => s.id)).toEqual(['node-a', 'ups-a', 'proxmox-a', 'zabbix-a'])
+    expect(result.services.map(s => s.id)).toEqual(['node-a', 'ups-a', 'rack-a', 'proxmox-a', 'zabbix-a'])
     expect(result.unavailableCategories).toEqual([])
   })
 
@@ -89,13 +91,14 @@ describe('fetchAllServices', () => {
   it('drops a rejected adapter\'s results but names the real category in unavailableCategories', async () => {
     vi.mocked(fetchNodeStatus).mockResolvedValue([service('node-a')])
     vi.mocked(fetchUpsStatus).mockResolvedValue([service('ups-a')])
+    vi.mocked(fetchRackSensorStatus).mockResolvedValue([service('rack-a')])
     vi.mocked(fetchProxmoxNodeStatus).mockRejectedValue(new Error('proxmox API down'))
     vi.mocked(fetchZabbixStatus).mockResolvedValue([service('zabbix-a')])
     vi.mocked(fetchIncidents).mockResolvedValue([])
 
     const result = await fetchAllServices()
 
-    expect(result.services.map(s => s.id)).toEqual(['node-a', 'ups-a', 'zabbix-a'])
+    expect(result.services.map(s => s.id)).toEqual(['node-a', 'ups-a', 'rack-a', 'zabbix-a'])
     expect(result.unavailableCategories).toEqual(['Proxmox API'])
   })
 
@@ -108,6 +111,7 @@ describe('fetchAllServices', () => {
   it('correctly attributes a rejection to the first adapter, not a shifted neighbor', async () => {
     vi.mocked(fetchNodeStatus).mockRejectedValue(new Error('node exporter down'))
     vi.mocked(fetchUpsStatus).mockResolvedValue([service('ups-a')])
+    vi.mocked(fetchRackSensorStatus).mockResolvedValue([service('rack-a')])
     vi.mocked(fetchProxmoxNodeStatus).mockResolvedValue([service('proxmox-a')])
     vi.mocked(fetchZabbixStatus).mockResolvedValue([service('zabbix-a')])
     vi.mocked(fetchIncidents).mockResolvedValue([])
@@ -117,9 +121,28 @@ describe('fetchAllServices', () => {
     expect(result.unavailableCategories).toEqual(['Proxmox Nodes'])
   })
 
+  // Rejecting the newly-inserted third adapter specifically — the same
+  // off-by-one risk as the test above, but for the position most likely
+  // to have been miscounted the moment a fifth adapter got spliced into
+  // the middle of an existing list rather than appended at the end.
+  it('correctly attributes a rejection to the newly-added third adapter, not its neighbors', async () => {
+    vi.mocked(fetchNodeStatus).mockResolvedValue([service('node-a')])
+    vi.mocked(fetchUpsStatus).mockResolvedValue([service('ups-a')])
+    vi.mocked(fetchRackSensorStatus).mockRejectedValue(new Error('rack sensor unreachable'))
+    vi.mocked(fetchProxmoxNodeStatus).mockResolvedValue([service('proxmox-a')])
+    vi.mocked(fetchZabbixStatus).mockResolvedValue([service('zabbix-a')])
+    vi.mocked(fetchIncidents).mockResolvedValue([])
+
+    const result = await fetchAllServices()
+
+    expect(result.unavailableCategories).toEqual(['Environment'])
+    expect(result.services.map(s => s.id)).toEqual(['node-a', 'ups-a', 'proxmox-a', 'zabbix-a'])
+  })
+
   it('returns an empty services array and every category name, not a rejection, when every adapter fails', async () => {
     vi.mocked(fetchNodeStatus).mockRejectedValue(new Error('down'))
     vi.mocked(fetchUpsStatus).mockRejectedValue(new Error('down'))
+    vi.mocked(fetchRackSensorStatus).mockRejectedValue(new Error('down'))
     vi.mocked(fetchProxmoxNodeStatus).mockRejectedValue(new Error('down'))
     vi.mocked(fetchZabbixStatus).mockRejectedValue(new Error('down'))
     vi.mocked(fetchIncidents).mockResolvedValue([])
@@ -127,7 +150,7 @@ describe('fetchAllServices', () => {
     const result = await fetchAllServices()
 
     expect(result.services).toEqual([])
-    expect(result.unavailableCategories).toEqual(['Proxmox Nodes', 'Power', 'Proxmox API', 'Zabbix'])
+    expect(result.unavailableCategories).toEqual(['Proxmox Nodes', 'Power', 'Environment', 'Proxmox API', 'Zabbix'])
   })
 
   // Incidents get their own independent failure isolation, deliberately
@@ -137,6 +160,7 @@ describe('fetchAllServices', () => {
   it('falls back to an empty incidents array on failure, without affecting services at all', async () => {
     vi.mocked(fetchNodeStatus).mockResolvedValue([service('node-a')])
     vi.mocked(fetchUpsStatus).mockResolvedValue([])
+    vi.mocked(fetchRackSensorStatus).mockResolvedValue([])
     vi.mocked(fetchProxmoxNodeStatus).mockResolvedValue([])
     vi.mocked(fetchZabbixStatus).mockResolvedValue([])
     vi.mocked(fetchIncidents).mockRejectedValue(new Error('incidents fetch failed'))
@@ -150,6 +174,7 @@ describe('fetchAllServices', () => {
   it('returns a real, current ISO timestamp as lastUpdated', async () => {
     vi.mocked(fetchNodeStatus).mockResolvedValue([])
     vi.mocked(fetchUpsStatus).mockResolvedValue([])
+    vi.mocked(fetchRackSensorStatus).mockResolvedValue([])
     vi.mocked(fetchProxmoxNodeStatus).mockResolvedValue([])
     vi.mocked(fetchZabbixStatus).mockResolvedValue([])
     vi.mocked(fetchIncidents).mockResolvedValue([])
