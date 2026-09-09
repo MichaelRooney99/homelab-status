@@ -24,11 +24,11 @@ import type { ServiceStatus, Status, UptimeDay } from './services/types'
 // dropped, so a new category showing up in the data can never
 // disappear from the page just because nobody remembered to add it here.
 const CATEGORY_ORDER = [
+  'Power',
+  'Environment',
   'Proxmox Nodes',
   'Proxmox API',
   'Zabbix',
-  'Power',
-  'Environment',
   'Network',
   'Services',
 ]

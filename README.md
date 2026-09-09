@@ -84,6 +84,7 @@ homelab-status/
 │   │   ├── services/       ← one adapter per data source, normalized to ServiceStatus[]
 │   │   │   ├── types.ts
 │   │   │   ├── prometheus.ts
+│   │   │   ├── prometheus.test.ts      ←Added 09-08-2026 ; Prom scrapes ESP32 for racks environmental conditions 
 │   │   │   ├── proxmox.ts
 │   │   │   ├── zabbix.ts
 │   │   │   ├── zabbix.test.ts
